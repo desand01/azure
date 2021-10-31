@@ -310,8 +310,7 @@ class AzureRMResource(AzureRMModuleBase):
             setattr(self, key, kwargs[key])
         self.mgmt_client = self.get_mgmt_svc_client(GenericRestClient,
                                                     base_url=self._cloud_environment.endpoints.resource_manager)
-        
-        print(str(1 /0))
+
         if self.state == 'absent':
             self.method = 'DELETE'
             self.status_code.append(204)
