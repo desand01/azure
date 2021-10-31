@@ -279,7 +279,6 @@ class AzureRMResourceGroup(AzureRMModuleBase):
 
 
 def main():
-    print(str(1 / 0))
     AzureRMResourceGroup()
 
 
