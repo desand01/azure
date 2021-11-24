@@ -402,6 +402,7 @@ volumes:
             }
 '''
 
+import websocket
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
 from ansible.module_utils.common.dict_transformations import _snake_to_camel
 
@@ -523,7 +524,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             state=dict(
                 type='str',
                 default='present',
-                choices=['present', 'absent','restart']
+                choices=['present', 'absent','restart','execute']
             ),
             location=dict(
                 type='str',
@@ -576,6 +577,19 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                 type='int',
                 default=None
             ),
+            container=dict(
+                type='str',
+                default=None
+            ),
+            command=dict(
+                type='str',
+                default='/bin/sh'
+            ),
+            lines=dict(
+                type='list',
+                elements='str',
+                default=[]
+            )
         )
 
         self.resource_group = None
@@ -587,6 +601,8 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         self.containers = None
         self.restart_policy = None
         self.restart_wait = None
+        self.container = None
+        self.command = None
 
         self.tags = None
 
@@ -629,6 +645,8 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                 self.log("Nothing to delete")
             elif self.state == 'restart':
                 self.log("Nothing to restart")
+            elif self.state == 'execute':
+                self.log("Container Group doesn't exist")
             else:
                 self.force_update = True
         else:
@@ -665,6 +683,11 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             self.results['ip_address'] = response['ip_address']['ip'] if 'ip_address' in response else ''
 
             self.log("Creation / Update done")
+        elif self.state == 'execute':
+            self.log("Excute commande in container instance")
+
+            response = self.execute_containerinstance(response)
+
         elif self.state == 'restart':
 
             self.log("Restart the container instance")
@@ -679,6 +702,33 @@ class AzureRMContainerInstance(AzureRMModuleBase):
 
         return self.results
 
+    def execute_containerinstance(self, response):
+        self.log("Execute in container instance {0}.{1}".format(self.name, self.container))
+        terminal_size = {
+                "rows": 12,
+                "cols": 12
+            }
+        ws = None
+        try:
+            info = self.containerinstance_client.container.execute_command(
+                resource_group_name=self.resource_group, container_group_name=self.name, 
+                container_name=self.container, command=self.command, terminal_size=terminal_size)
+            ret = []
+            self.results['consol'] = ret
+            ws = websocket.WebSocket()
+            ws.connect(info.web_socket_uri)
+            ws.send(info.password)
+            msg = ws.recv()
+            for line in self.lines:
+                ws.send(line + '\n')
+                msg = ws.recv()
+                ret.append(msg)
+        except CloudError as exc:
+            self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
+        finally:
+            if ws is not None:
+                ws.close()
+        
     def restart_containerinstance(self, response):
         self.log("Restart the container instance {0}".format(self.name))
         try:
