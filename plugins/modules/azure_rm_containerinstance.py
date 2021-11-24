@@ -43,6 +43,14 @@ options:
         choices:
             - absent
             - present
+            - restart
+    restart_wait:
+        description:
+            - Wait for containers group to restart
+            - If absent, do not wait
+            - Task fail if waiting time expired et containers group is not running
+        type: int
+        default: None
     ip_address:
         description:
             - The IP address type of the container group.
@@ -515,7 +523,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             state=dict(
                 type='str',
                 default='present',
-                choices=['present', 'absent']
+                choices=['present', 'absent','restart']
             ),
             location=dict(
                 type='str',
@@ -563,7 +571,11 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                 type='list',
                 elements='dict',
                 options=volumes_spec
-            )
+            ),
+            restart_wait=dict(
+                type='int',
+                default=None
+            ),
         )
 
         self.resource_group = None
@@ -574,6 +586,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         self.dns_name_label = None
         self.containers = None
         self.restart_policy = None
+        self.restart_wait = None
 
         self.tags = None
 
@@ -614,6 +627,8 @@ class AzureRMContainerInstance(AzureRMModuleBase):
 
             if self.state == 'absent':
                 self.log("Nothing to delete")
+            elif self.state == 'restart':
+                self.log("Nothing to restart")
             else:
                 self.force_update = True
         else:
@@ -650,8 +665,37 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             self.results['ip_address'] = response['ip_address']['ip'] if 'ip_address' in response else ''
 
             self.log("Creation / Update done")
+        elif self.state == 'restart':
+
+            self.log("Restart the container instance")
+
+            response = self.restart_containerinstance(response)
+            if self.restart_wait is None:
+                self.results['changed'] = True
+            elif response == 'Succeeded':
+                self.results['changed'] = True
+            else:
+                self.fail("Error when restarting containers: {0}".format(response))
 
         return self.results
+
+    def restart_containerinstance(self, response):
+        self.log("Restart the container instance {0}".format(self.name))
+        try:
+            state_name = 'restart'
+            if response['instance_view']['state'] == 'Running':
+                poller = self.containerinstance_client.container_groups.restart(resource_group_name=self.resource_group, container_group_name=self.name)
+            else:
+                state_name = 'start'
+                poller = self.containerinstance_client.container_groups.start(resource_group_name=self.resource_group, container_group_name=self.name)
+            if self.restart_wait is not None:
+                poller.wait(self.restart_wait)
+                if not poller.done():
+                    return 'time-out'
+            self.results['state'][state_name] = poller.status()
+            return poller.status()
+        except CloudError as exc:
+            self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
 
     def create_update_containerinstance(self):
         '''
