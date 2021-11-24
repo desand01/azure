@@ -733,7 +733,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             
             console = ''.join(self.exec_info['console'])
             console = console.replace(' \r','')
-            self.results['console'] = re.split('\r\n',console)
+            self.results['console'] = re.split('[\r]?\n',console)
 
         except CloudError as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
