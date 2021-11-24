@@ -691,8 +691,8 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             self.log("Creation / Update done")
         elif self.state == 'execute':
             self.log("Excute commande in container instance")
-
-            response = self.execute_containerinstance(response)
+            self.execute_containerinstance(response)
+            self.results['changed'] = True
 
         elif self.state == 'restart':
 
