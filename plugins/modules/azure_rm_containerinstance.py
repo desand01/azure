@@ -401,12 +401,7 @@ volumes:
                         "revision": null
             }
 '''
-
-import websocket
-import _thread
-import time
-import re
-from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
+from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase, AzureRMTerminal
 from ansible.module_utils.common.dict_transformations import _snake_to_camel
 
 try:
@@ -712,62 +707,24 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         self.log("Execute in container instance {0}.{1}".format(self.name, self.container))
         terminal_size = {
                 "rows": 12,
-                "cols": 12
+                "cols": 200
             }
-        ws = None
+        terminel = None
         try:
             info = self.containerinstance_client.container.execute_command(
                     resource_group_name=self.resource_group, container_group_name=self.name, 
                     container_name=self.container, command=self.command, terminal_size=terminal_size)
             
-            self.exec_info = {
-                'uri': info.web_socket_uri,
-                'password': info.password,
-                'console': [],
-            }
-            _thread.start_new_thread(self.ws_thread, ())
-            self.ws_wait()
-            for line in self.lines:
-                self.websocket.send(line + '\r\n')
-                self.ws_wait()
-            
-            console = ''.join(self.exec_info['console'])
-            console = console.replace(' \r','')
-            self.results['console'] = re.split('[\r]?\n',console)
+            terminel = AzureRMTerminal(info)
+            terminel.exec(self.lines)
+            terminel.wait()
+            self.results['console'] = terminel.console
 
         except CloudError as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
         finally:
-            if self.websocket is not None:
-                self.websocket.close()
-    
-    def ws_wait(self):
-        ar = self.exec_info['console']
-        size = len(ar) - 1
-        for x in range(1, 24):
-            current = len(ar)
-            if current == 0:
-                time.sleep(5)
-            elif size < len(ar):
-                size = len(ar)
-                time.sleep(5)
-            elif not ar[current - 1].endswith('# '):
-                time.sleep(5)
-            else:
-                break
-
-
-
-    def ws_thread(self, *args):
-        self.websocket = websocket.WebSocketApp(self.exec_info['uri'], on_open = self.ws_open, on_message = self.ws_message)
-        self.websocket.run_forever()
-        
-    def ws_open(self, ws):
-        ws.send(self.exec_info['password'])
-
-    def ws_message(self, ws, message):
-        self.exec_info['console'].append(message)
-
+            if terminel is not None:
+                terminel.close()
 
     def restart_containerinstance(self, response):
         self.log("Restart the container instance {0}".format(self.name))

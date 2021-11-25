@@ -343,7 +343,7 @@ AZURE_PKG_VERSIONS = {
     },
     'ContainerInstanceManagementClient': {
         'package_name': 'containerinstance',
-        'expected_version': '0.4.0'
+        'expected_version': '1.4.0'
     },
     'NetworkManagementClient': {
         'package_name': 'network',
@@ -1677,3 +1677,69 @@ class AzureRMAuth(object):
         #         log_file.write(json.dumps(msg, indent=4, sort_keys=True))
         #     else:
         #         log_file.write(msg + u'\n')
+
+
+class AzureRMTerminalException(Exception):
+    pass
+
+class AzureRMTerminal(object):
+    _websocket = None
+    _exec_info = dict(
+        uri='',
+        password='',
+        console=[]
+        )
+
+    #azure.mgmt.containerinstance.models.ContainerExecResponse 
+    def __init__(self, containerExecResponse):
+        self._exec_info['uri'] = containerExecResponse.web_socket_uri
+        self._exec_info['password'] = containerExecResponse.password
+        import _thread
+        _thread.start_new_thread(self._ws_thread, ())
+
+    def wait(self, timeout=120):
+        import time
+        ar = self._exec_info['console']
+        size = len(ar) - 1
+        for x in range(1, timeout):
+            current = len(ar)
+            if current == 0:
+                time.sleep(1)
+            elif size < len(ar):
+                size = len(ar)
+                time.sleep(1)
+            elif not ar[current - 1].endswith('# '):
+                time.sleep(1)
+            else:
+                return
+        msg = 'Empty console'
+        if len(ar) > 0:
+            msg = ar[len(ar) - 1]
+        raise AzureRMTerminalException('Timeout - {0}', msg)
+
+    def _ws_thread(self, *args):
+        import websocket
+        self._websocket = websocket.WebSocketApp(self._exec_info['uri'], on_open = self._ws_open, on_message = self._ws_message)
+        self._websocket.run_forever()
+        
+    def _ws_open(self, ws):
+        ws.send(self._exec_info['password'])
+
+    def _ws_message(self, ws, message):
+        self._exec_info['console'].append(message)
+
+    def exec(self, lines):
+        for line in lines:
+            self.wait()
+            self._websocket.send(line + '\n')
+
+    def close(self):
+        if self._websocket is not None:
+            self._websocket.close()
+            self._websocket = None
+
+    @property
+    def console(self):
+        console = ''.join(self._exec_info['console'])
+        console = console.replace(' \r','')
+        return re.split('[\r]?\n',console)
