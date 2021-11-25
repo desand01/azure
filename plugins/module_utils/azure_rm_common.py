@@ -1684,6 +1684,7 @@ class AzureRMTerminalException(Exception):
 
 class AzureRMTerminal(object):
     _websocket = None
+    _lastline = None
     _exec_info = dict(
         uri='',
         password='',
@@ -1708,14 +1709,14 @@ class AzureRMTerminal(object):
             elif size < len(ar):
                 size = len(ar)
                 time.sleep(1)
-            elif not ar[current - 1].endswith('# '):
+            elif re.search('[#$:] $', ar[current - 1]) is None:
                 time.sleep(1)
             else:
                 return
         msg = 'Empty console'
         if len(ar) > 0:
             msg = ar[len(ar) - 1]
-        raise AzureRMTerminalException('Timeout - {0}', msg)
+        raise AzureRMTerminalException('Timeout - {0} : {1}'.format(self._lastline, msg))
 
     def _ws_thread(self, *args):
         import websocket
@@ -1730,8 +1731,12 @@ class AzureRMTerminal(object):
 
     def exec(self, lines):
         for line in lines:
+            self._lastline = line
             self.wait()
-            self._websocket.send(line + '\n')
+            try:
+                self._websocket.send(line + '\n')
+            except Exception as exc:
+                raise AzureRMTerminalException('Exception - {0} : {1}'.format(str(exc.args), self._lastline))
 
     def close(self):
         if self._websocket is not None:
