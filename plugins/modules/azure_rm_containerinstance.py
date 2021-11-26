@@ -44,6 +44,7 @@ options:
             - absent
             - present
             - restart
+            - execute
     restart_wait:
         description:
             - Wait for containers group to restart
@@ -86,6 +87,42 @@ options:
         description:
             - The password to log in container image registry server.
         type: str
+    restart_wait:
+        description:
+            - When restarting container, wait in secondes for completion.
+            - If missing, restart async
+        type: int
+    execute:
+        description:
+            - Required when executing command in container.
+        type: dict
+        suboptions:
+            container:
+                description:
+                    - The name of the container instance.
+                type: str
+                required: true
+            command:
+                description:
+                    - Interpreter
+                type: str
+                default: '/bin/sh'
+            lines:
+                description:
+                    - List of commandes to execute.
+                type: list
+                elements: str
+                required: true
+            wait_timeout:
+                description:
+                    - Wait time in secondes between message from container
+                type: int
+                default: 120
+            wait_regex:
+                description:
+                    - Wait until regex match last received message from container or wait_timeout is reach
+                type: str
+                default: '[#$:] $'
     containers:
         description:
             - List of containers.
@@ -307,6 +344,27 @@ EXAMPLES = '''
         - name: myvolume1
           git_repo:
             repository: "https://github.com/Azure-Samples/aci-helloworld.git"
+
+  - name: Disable required SSL for keycloak container
+    azure_rm_containerinstance:
+      resource_group: "myResourceGroup"
+      name: "myContainerInstanceGroup"
+      state: "execute"
+      execute:
+        container: "myContainerInstance"
+        lines:
+          - 'cd $JBOSS_HOME/bin'
+          - './kcadm.sh config credentials --server http://localhost:8080/auth --realm master --user admin'
+          - 'mysecretpassword'
+          - './kcadm.sh update realms/master -s sslRequired=NONE'
+
+  - name: Restart containers group and wait 300 secondes
+    azure_rm_containerinstance:
+      resource_group: "myResourceGroup"
+      name: "myContainerInstanceGroup"
+      state: "restart"
+      restart_wait: 300
+
 '''
 RETURN = '''
 id:
@@ -400,6 +458,16 @@ volumes:
                         "repository": "https://github.com/Azure-Samples/aci-helloworld.git",
                         "revision": null
             }
+console:
+    description:
+        - Terminal output
+    returned: if state is execute
+    type: list
+state:
+    description:
+        - Restart opperation and result
+    returned: if state is restart
+    type: dict
 '''
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase, AzureRMTerminal
 from ansible.module_utils.common.dict_transformations import _snake_to_camel
@@ -500,6 +568,13 @@ volumes_spec = dict(
     git_repo=dict(type='dict', options=git_repo_volume_spec)
 )
 
+execute_spec = dict(
+    container=dict(type='str',required=True),
+    command=dict(type='str',default='/bin/sh'),
+    lines=dict(type='list',elements='str',required=True),
+    wait_timeout=dict(type='int',default=120),
+    wait_regex=dict(type='str',default='[#$:] $')
+)
 
 class AzureRMContainerInstance(AzureRMModuleBase):
     """Configuration class for an Azure RM container instance resource"""
@@ -575,18 +650,10 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                 type='int',
                 default=None
             ),
-            container=dict(
-                type='str',
+            execute=dict(
+                type='dict', 
+                options=execute_spec,
                 default=None
-            ),
-            command=dict(
-                type='str',
-                default='/bin/sh'
-            ),
-            lines=dict(
-                type='list',
-                elements='str',
-                default=[]
             )
         )
 
@@ -599,22 +666,20 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         self.containers = None
         self.restart_policy = None
         self.restart_wait = None
-        self.container = None
-        self.command = None
 
         self.tags = None
 
         self.results = dict(changed=False, state=dict())
         self.cgmodels = None
 
-        self.websocket = None
-        self.exec_info = None
-
         required_if = [
-            ('state', 'present', ['containers'])
+            ('state', 'present', ['containers']),
+            ('state', 'execute', ['execute'])
         ]
+        mutually_exclusive = [['containers', 'execute']]
 
         super(AzureRMContainerInstance, self).__init__(derived_arg_spec=self.module_arg_spec,
+                                                       mutually_exclusive=mutually_exclusive,
                                                        supports_check_mode=True,
                                                        supports_tags=True,
                                                        required_if=required_if)
@@ -627,7 +692,6 @@ class AzureRMContainerInstance(AzureRMModuleBase):
 
         resource_group = None
         response = None
-        results = dict()
 
         # since this client hasn't been upgraded to expose models directly off the OperationClass, fish them out
         self.cgmodels = self.containerinstance_client.container_groups.models
@@ -685,6 +749,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
 
             self.log("Creation / Update done")
         elif self.state == 'execute':
+
             self.log("Excute commande in container instance")
             self.execute_containerinstance(response)
             self.results['changed'] = True
@@ -704,27 +769,23 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         return self.results
 
     def execute_containerinstance(self, response):
-        self.log("Execute in container instance {0}.{1}".format(self.name, self.container))
-        terminal_size = {
-                "rows": 12,
-                "cols": 200
-            }
-        terminel = None
+        self.log("Execute in container instance {0}.{1}".format(self.name, self.execute['container']))
+        terminal = None
         try:
-            info = self.containerinstance_client.container.execute_command(
+            execResponse = self.containerinstance_client.container.execute_command(
                     resource_group_name=self.resource_group, container_group_name=self.name, 
-                    container_name=self.container, command=self.command, terminal_size=terminal_size)
+                    container_name=self.execute['container'], command=self.execute['command'], terminal_size={"rows": 12,"cols": 200})
             
-            terminel = AzureRMTerminal(info)
-            terminel.exec(self.lines)
-            terminel.wait()
-            self.results['console'] = terminel.console
+            terminal = AzureRMTerminal(execResponse, self.execute)
+            terminal.exec(self.execute['lines'])
+            terminal.wait()
+            self.results['console'] = terminal.console
 
         except CloudError as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
         finally:
-            if terminel is not None:
-                terminel.close()
+            if terminal is not None:
+                terminal.close()
 
     def restart_containerinstance(self, response):
         self.log("Restart the container instance {0}".format(self.name))

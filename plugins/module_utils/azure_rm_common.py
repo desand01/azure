@@ -292,6 +292,7 @@ from base64 import b64encode, b64decode
 from hashlib import sha256
 from hmac import HMAC
 from time import time
+from time import sleep
 
 try:
     from urllib import (urlencode, quote_plus)
@@ -1685,6 +1686,8 @@ class AzureRMTerminalException(Exception):
 class AzureRMTerminal(object):
     _websocket = None
     _lastline = None
+    _wait_regex = None
+    _wait_timeout = 120
     _exec_info = dict(
         uri='',
         password='',
@@ -1692,25 +1695,30 @@ class AzureRMTerminal(object):
         )
 
     #azure.mgmt.containerinstance.models.ContainerExecResponse 
-    def __init__(self, containerExecResponse):
+    def __init__(self, containerExecResponse, args):
         self._exec_info['uri'] = containerExecResponse.web_socket_uri
         self._exec_info['password'] = containerExecResponse.password
+        self._wait_regex = re.compile(args['wait_regex'] or '[#$:] $')
+        self._wait_timeout = args['wait_timeout'] or 120
         import _thread
         _thread.start_new_thread(self._ws_thread, ())
 
-    def wait(self, timeout=120):
-        import time
+    def wait(self, timeout=None):
+        _timeout = timeout or self._wait_timeout
         ar = self._exec_info['console']
         size = len(ar) - 1
-        for x in range(1, timeout):
+        x = 0
+        while x < _timeout:
+            x += 1
             current = len(ar)
             if current == 0:
-                time.sleep(1)
+                sleep(1)
             elif size < len(ar):
                 size = len(ar)
-                time.sleep(1)
-            elif re.search('[#$:] $', ar[current - 1]) is None:
-                time.sleep(1)
+                x = 0
+                sleep(1)
+            elif self._wait_regex.search(ar[current - 1]) is None:
+                sleep(1)
             else:
                 return
         msg = 'Empty console'
