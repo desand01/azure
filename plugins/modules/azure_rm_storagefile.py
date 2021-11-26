@@ -1,0 +1,466 @@
+#!/usr/bin/python
+#
+# Copyright (c) 2016 Matt Davis, <mdavis@ansible.com>
+#                    Chris Houseknecht, <house@redhat.com>
+#
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+from __future__ import absolute_import, division, print_function
+from traceback import print_exc
+__metaclass__ = type
+
+
+DOCUMENTATION = '''
+---
+module: azure_rm_storagefile
+short_description: Manage file containers and file objects
+version_added: "0.0.1"
+description:
+    - Create, update and delete file containers and file objects.
+    - Use to upload a file and store it as a file object, or download a file object to a file(upload and download mode)
+    - Use to upload a batch of files under a given directory(batch upload mode)
+    - In the batch upload mode, the existing file object will be overwritten if a file object with the same name is to be created.
+    - the module can work exclusively in three modes, when C(batch_upload_src) is set, it is working in batch upload mode;
+      when C(src) is set, it is working in upload mode and when C(dst) is set, it is working in dowload mode.
+options:
+    storage_account_name:
+        description:
+            - Name of the storage account to use.
+        required: true
+        aliases:
+            - account_name
+            - storage_account
+    file:
+        description:
+            - Name of a file object within the container.
+        aliases:
+            - file_name
+    container:
+        description:
+            - Name of a file container within the storage account.
+        required: true
+        aliases:
+            - container_name
+    content_type:
+        description:
+            - Set the file content-type header. For example C(image/png).
+    cache_control:
+        description:
+            - Set the file cache-control header.
+    content_disposition:
+        description:
+            - Set the file content-disposition header.
+    content_encoding:
+        description:
+            - Set the file encoding header.
+    content_language:
+        description:
+            - Set the file content-language header.
+    content_md5:
+        description:
+            - Set the file md5 hash value.
+    dest:
+        description:
+            - Destination file path. Use with state C(present) to download a file.
+        aliases:
+            - destination
+    force:
+        description:
+            - Overwrite existing file or file when uploading or downloading. Force deletion of a container that contains files.
+        type: bool
+        default: no
+    resource_group:
+        description:
+            - Name of the resource group to use.
+        required: true
+        aliases:
+            - resource_group_name
+    src:
+        description:
+            - Source file path. Use with state C(present) to upload a file.
+        aliases:
+            - source
+    batch_upload_src:
+        description:
+            - Batch upload source directory. Use with state C(present) to upload batch of files under the directory.
+    batch_upload_dst:
+        description:
+            - Base directory in container when upload batch of files.
+    state:
+        description:
+            - State of a container or file.
+            - Use state C(absent) with a container value only to delete a container. Include a file value to remove
+              a specific file. A container will not be deleted, if it contains files. Use the I(force) option to override,
+              deleting the container and all associated files.
+            - Use state C(present) to create or update a container and upload or download a file. If the container
+              does not exist, it will be created. If it exists, it will be updated with configuration options. Provide
+              a file name and either src or dest to upload or download. Provide a src path to upload and a dest path
+              to download. If a file (uploading) or a file (downloading) already exists, it will not be overwritten
+              unless I(force=true).
+        default: present
+        choices:
+            - absent
+            - present
+    public_access:
+        description:
+            - A container's level of public access. By default containers are private.
+            - Can only be set at time of container creation.
+        choices:
+            - container
+            - file
+
+extends_documentation_fragment:
+    - azure.azcollection.azure
+    - azure.azcollection.azure_tags
+
+author:
+    - Chris Houseknecht (@chouseknecht)
+    - Matt Davis (@nitzmahone)
+
+'''
+
+EXAMPLES = '''
+- name: Remove container foo
+  azure_rm_storagefile:
+    resource_group: myResourceGroup
+    storage_account_name: clh0002
+    container: foo
+    state: absent
+
+- name: Create container foo and upload a file
+  azure_rm_storagefile:
+    resource_group: myResourceGroup
+    storage_account_name: clh0002
+    container: foo
+    file: graylog.png
+    src: ./files/graylog.png
+    public_access: container
+    content_type: 'application/image'
+
+- name: Download the file
+  azure_rm_storagefile:
+    resource_group: myResourceGroup
+    storage_account_name: clh0002
+    container: foo
+    file: graylog.png
+    dest: ~/tmp/images/graylog.png
+'''
+
+RETURN = '''
+file:
+    description:
+        - Facts about the current state of the file.
+    returned: when a file is operated on
+    type: dict
+    sample: {
+        "content_length": 136532,
+        "content_settings": {
+            "cache_control": null,
+            "content_disposition": null,
+            "content_encoding": null,
+            "content_language": null,
+            "content_md5": null,
+            "content_type": "application/image"
+        },
+        "last_modified": "09-Mar-2016 22:08:25 +0000",
+        "name": "graylog.png",
+        "tags": {},
+        "type": "BlockFile"
+    }
+container:
+    description:
+        - Facts about the current state of the selected container.
+    returned: always
+    type: dict
+    sample: {
+        "last_modified": "09-Mar-2016 19:28:26 +0000",
+        "name": "foo",
+        "tags": {}
+    }
+'''
+
+import os
+import mimetypes
+
+try:
+    from azure.storage.file.models import ContentSettings
+    from azure.common import AzureMissingResourceHttpError, AzureHttpError
+except ImportError:
+    # This is handled in azure_rm_common
+    pass
+
+from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
+
+
+class AzureRMStorageFile(AzureRMModuleBase):
+
+    def __init__(self):
+
+        self.module_arg_spec = dict(
+            resource_group=dict(required=True, type='str', aliases=['resource_group_name']),
+            storage_account_name=dict(required=True, type='str', aliases=['account_name', 'storage_account']),
+            share_name=dict(required=True, type='str'),
+            src=dict(type='str', aliases=['source_file']),
+            file=dict(type='path', aliases=['file_path']),
+            dest=dict(type='path', aliases=['destination']),
+            force=dict(type='bool', default=False),
+            state=dict(type='str', default='present', choices=['absent', 'present']),
+            content_type=dict(type='str'),
+            content_encoding=dict(type='str'),
+            content_language=dict(type='str'),
+            content_disposition=dict(type='str'),
+            cache_control=dict(type='str'),
+            content_md5=dict(type='str'),
+        )
+
+        #mutually_exclusive = [('src', 'dest'), ('src', 'batch_upload_src'), ('dest', 'batch_upload_src')]
+
+        self.storage_account_name = None
+        self.file = None
+        self.file_path = None
+        self.file_name = None
+        self.directory_path = None
+        self.file_obj = None
+        self.dest = None
+        self.force = None
+        self.resource_group = None
+        self.src = None
+        self.state = None
+        self.tags = None
+        self.results = dict(
+            changed=False,
+            actions=[],
+            file=dict()
+        )
+
+        super(AzureRMStorageFile, self).__init__(derived_arg_spec=self.module_arg_spec,
+                                                 supports_check_mode=True,
+                                                 #mutually_exclusive=mutually_exclusive,
+                                                 supports_tags=True)
+
+    def exec_module(self, **kwargs):
+
+        for key in list(self.module_arg_spec.keys()) + ['tags']:
+            setattr(self, key, kwargs[key])
+
+        self.results['check_mode'] = self.check_mode
+
+        # add file path validation
+        self.file = self.file.strip('/')
+        self.file_path = self.file.split('/')
+        self.file_name = self.file_path[-1]
+        self.directory_path = "/".join(self.file_path[:-1])
+
+        self.file_client = self.get_file_client(self.resource_group, self.storage_account_name)
+
+        if self.state == 'present':
+
+            if self.file:
+                # create, update or download file
+                self.file_obj = self.get_file()
+                if self.src and self.src_is_valid():
+                    if self.file_obj and not self.force:
+                        self.log("Cannot upload to {0}. File with that name already exists. "
+                                 "Use the force option".format(self.file))
+                    else:
+                        self.upload_file()
+                elif self.dest and self.dest_is_valid():
+                    self.download_file()
+
+                update_tags, self.file_obj['tags'] = self.update_tags(self.file_obj.get('tags'))
+                if update_tags:
+                    self.update_file_tags(self.file_obj['tags'])
+
+                if self.file_content_settings_differ():
+                    self.update_file_content_settings()
+
+        elif self.state == 'absent':
+            self.file_obj = self.get_file()
+            if self.file_obj:
+                # Delete file
+                self.delete_file()
+
+        # until we sort out how we want to do this globally
+        del self.results['actions']
+        return self.results
+
+    def get_file(self):
+        result = dict()
+        file = None
+        if self.file:
+            try:
+                file = self.file_client.get_file_properties(self.share_name, self.directory_path, self.file_name)
+            except AzureMissingResourceHttpError:
+                pass
+        if file:
+            result = dict(
+                name=file.name,
+                tags=file.metadata,
+                last_modified=file.properties.last_modified.strftime('%d-%b-%Y %H:%M:%S %z'),
+                content_length=file.properties.content_length,
+                content_settings=dict(
+                    content_type=file.properties.content_settings.content_type,
+                    content_encoding=file.properties.content_settings.content_encoding,
+                    content_language=file.properties.content_settings.content_language,
+                    content_disposition=file.properties.content_settings.content_disposition,
+                    cache_control=file.properties.content_settings.cache_control,
+                    content_md5=file.properties.content_settings.content_md5
+                )
+            )
+        return result
+
+    def upload_file(self):
+        content_settings = None
+        if self.content_type or self.content_encoding or self.content_language or self.content_disposition or \
+                self.cache_control or self.content_md5:
+            content_settings = ContentSettings(
+                content_type=self.content_type,
+                content_encoding=self.content_encoding,
+                content_language=self.content_language,
+                content_disposition=self.content_disposition,
+                cache_control=self.cache_control,
+                content_md5=self.content_md5
+            )
+        if not self.check_mode:
+            try:
+                self._create_directory()
+                self.file_client.create_file_from_path(self.share_name, self.directory_path, self.file_name,
+                                                       self.src,
+                                                       content_settings=content_settings, metadata=self.tags)
+            except AzureHttpError as exc:
+                self.fail("Error creating file {0} - {1}".format(self.file, str(exc)))
+
+        self.file_obj = self.get_file()
+        self.results['changed'] = True
+        self.results['actions'].append('created file {0} from {1}'.format(self.file, self.src))
+        self.results['file'] = self.file_obj
+
+    def _create_directory(self):
+        path = ''
+        for i in range(0,len(self.file_path) - 1):
+            path += self.file_path[i]
+            self.file_client.create_directory(self.share_name, path)
+            path += '/'
+
+    def download_file(self):
+        if not self.check_mode:
+            try:
+                #share_name, directory_name, file_name, file_path,
+                self.file_client.get_file_to_path(self.share_name, self.directory_path, self.file_name, self.dest)
+            except Exception as exc:
+                self.fail("Failed to download file {0}:{1} to {2} - {3}".format('self.container',
+                                                                                self.file,
+                                                                                self.dest,
+                                                                                exc))
+        self.results['changed'] = True
+        self.results['actions'].append('downloaded file {0}:{1} to {2}'.format('self.container',
+                                                                               self.file,
+                                                                               self.dest))
+
+        self.results['file'] = self.file_obj
+
+    def src_is_valid(self):
+        if not os.path.isfile(self.src):
+            self.fail("The source path must be a file.")
+        if os.access(self.src, os.R_OK):
+            return True
+        self.fail("Failed to access {0}. Make sure the file exists and that you have "
+                  "read access.".format(self.src))
+
+    def dest_is_valid(self):
+        if not self.check_mode:
+            if not os.path.basename(self.dest):
+                # dest is a directory
+                if os.path.isdir(self.dest):
+                    self.log("Path is dir. Appending file name.")
+                    self.dest += self.file
+                else:
+                    try:
+                        self.log('Attempting to makedirs {0}'.format(self.dest))
+                        os.makedirs(self.dest)
+                    except IOError as exc:
+                        self.fail("Failed to create directory {0} - {1}".format(self.dest, str(exc)))
+                    self.dest += self.file
+            else:
+                # does path exist without basename
+                file_name = os.path.basename(self.dest)
+                path = self.dest.replace(file_name, '')
+                self.log('Checking path {0}'.format(path))
+                if not os.path.isdir(path):
+                    try:
+                        self.log('Attempting to makedirs {0}'.format(path))
+                        os.makedirs(path)
+                    except IOError as exc:
+                        self.fail("Failed to create directory {0} - {1}".format(path, str(exc)))
+            self.log('Checking final path {0}'.format(self.dest))
+            if os.path.isfile(self.dest) and not self.force:
+                # dest already exists and we're not forcing
+                self.log("Dest {0} already exists. Cannot download. Use the force option.".format(self.dest))
+                return False
+        return True
+
+    def delete_file(self):
+        if not self.check_mode:
+            try:
+                #share_name, directory_name, file_name, timeout=None)
+                self.file_client.delete_file(self.share_name, self.directory_path, self.file_name)
+            except AzureHttpError as exc:
+                self.fail("Error deleting file {0}:{1} - {2}".format('self.container', self.file, str(exc)))
+
+        self.results['changed'] = True
+        self.results['actions'].append('deleted file {0}:{1}'.format('self.container', self.file))
+
+    def update_file_tags(self, tags):
+        if not self.check_mode:
+            try:
+                self.file_client.set_file_metadata(self.file, metadata=tags)
+            except AzureHttpError as exc:
+                self.fail("Update file tags {0}:{1} - {2}".format('self.container', self.file, str(exc)))
+        self.file_obj = self.get_file()
+        self.results['changed'] = True
+        self.results['actions'].append("updated file {0}:{1} tags.".format('self.container', self.file))
+        self.results['file'] = self.file_obj
+
+    def file_content_settings_differ(self):
+        if self.content_type or self.content_encoding or self.content_language or self.content_disposition or \
+                self.cache_control or self.content_md5:
+            settings = dict(
+                content_type=self.content_type,
+                content_encoding=self.content_encoding,
+                content_language=self.content_language,
+                content_disposition=self.content_disposition,
+                cache_control=self.cache_control,
+                content_md5=self.content_md5
+            )
+            if self.file_obj['content_settings'] != settings:
+                return True
+
+        return False
+
+    def update_file_content_settings(self):
+        content_settings = ContentSettings(
+            content_type=self.content_type,
+            content_encoding=self.content_encoding,
+            content_language=self.content_language,
+            content_disposition=self.content_disposition,
+            cache_control=self.cache_control,
+            content_md5=self.content_md5
+        )
+        if not self.check_mode:
+            try:
+                self.file_client.set_file_properties(self.file, content_settings=content_settings)
+            except AzureHttpError as exc:
+                self.fail("Update file content settings {0}:{1} - {2}".format('self.container', self.file, str(exc)))
+
+        self.file_obj = self.get_file()
+        self.results['changed'] = True
+        self.results['actions'].append("updated file {0}:{1} content settings.".format('self.container', self.file))
+        self.results['file'] = self.file_obj
+
+
+def main():
+    AzureRMStorageFile()
+
+
+if __name__ == '__main__':
+    main()

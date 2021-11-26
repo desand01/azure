@@ -255,6 +255,7 @@ try:
     from azure.mgmt.trafficmanager import TrafficManagerManagementClient
     from azure.storage.cloudstorageaccount import CloudStorageAccount
     from azure.storage.blob import PageBlobService, BlockBlobService
+    from azure.storage.file.fileservice import FileService
     from adal.authentication_context import AuthenticationContext
     from azure.mgmt.authorization import AuthorizationManagementClient
     from azure.mgmt.sql import SqlManagementClient
@@ -337,6 +338,10 @@ AZURE_PKG_VERSIONS = {
     'StorageManagementClient': {
         'package_name': 'storage',
         'expected_version': '11.1.0'
+    },
+    'FileService': {
+        'package_name': 'file',
+        'expected_version': '12.6.0'
     },
     'ComputeManagementClient': {
         'package_name': 'compute',
@@ -705,6 +710,24 @@ class AzureRMModuleBase(object):
                 raise Exception("Invalid storage blob type defined.")
         except Exception as exc:
             self.fail("Error creating blob service client for storage account {0} - {1}".format(storage_account_name,
+                                                                                                str(exc)))
+
+    def get_file_client(self, resource_group_name, storage_account_name):
+        keys = dict()
+        try:
+            # Get keys from the storage account
+            self.log('Getting keys')
+            account_keys = self.storage_client.storage_accounts.list_keys(resource_group_name, storage_account_name)
+        except Exception as exc:
+            self.fail("Error getting keys for account {0} - {1}".format(storage_account_name, str(exc)))
+
+        try:
+            self.log('Create file share service')
+            return FileService(account_name=storage_account_name,
+                                account_key=account_keys.keys[0].value,
+                                endpoint_suffix=self._cloud_environment.suffixes.storage_endpoint)
+        except Exception as exc:
+            self.fail("Error creating file share service client for storage account {0} - {1}".format(storage_account_name,
                                                                                                 str(exc)))
 
     def create_default_pip(self, resource_group, location, public_ip_name, allocation_method='Dynamic', sku=None):
