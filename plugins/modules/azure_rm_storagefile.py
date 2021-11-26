@@ -201,6 +201,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
             storage_account_name=dict(required=True, type='str', aliases=['account_name', 'storage_account']),
             share_name=dict(required=True, type='str'),
             src=dict(type='str', aliases=['source_file']),
+            template=dict(type='str'),
             file=dict(type='path', aliases=['file_path']),
             dest=dict(type='path', aliases=['destination']),
             force=dict(type='bool', default=False),
@@ -213,7 +214,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
             content_md5=dict(type='str'),
         )
 
-        #mutually_exclusive = [('src', 'dest'), ('src', 'batch_upload_src'), ('dest', 'batch_upload_src')]
+        mutually_exclusive = [('src', 'dest','template')]
 
         self.storage_account_name = None
         self.file = None
@@ -225,6 +226,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
         self.force = None
         self.resource_group = None
         self.src = None
+        self.template = None
         self.state = None
         self.tags = None
         self.results = dict(
@@ -235,7 +237,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
 
         super(AzureRMStorageFile, self).__init__(derived_arg_spec=self.module_arg_spec,
                                                  supports_check_mode=True,
-                                                 #mutually_exclusive=mutually_exclusive,
+                                                 mutually_exclusive=mutually_exclusive,
                                                  supports_tags=True)
 
     def exec_module(self, **kwargs):
@@ -264,6 +266,12 @@ class AzureRMStorageFile(AzureRMModuleBase):
                                  "Use the force option".format(self.file))
                     else:
                         self.upload_file()
+                elif self.template:
+                    if self.file_obj and not self.force:
+                        self.log("Cannot upload to {0}. File with that name already exists. "
+                                 "Use the force option".format(self.file))
+                    else:
+                        self.upload_file(True)
                 elif self.dest and self.dest_is_valid():
                     self.download_file()
 
@@ -309,7 +317,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
             )
         return result
 
-    def upload_file(self):
+    def upload_file(self, as_text=False):
         content_settings = None
         if self.content_type or self.content_encoding or self.content_language or self.content_disposition or \
                 self.cache_control or self.content_md5:
@@ -324,9 +332,15 @@ class AzureRMStorageFile(AzureRMModuleBase):
         if not self.check_mode:
             try:
                 self._create_directory()
-                self.file_client.create_file_from_path(self.share_name, self.directory_path, self.file_name,
-                                                       self.src,
-                                                       content_settings=content_settings, metadata=self.tags)
+                if as_text:
+                    content_encoding = self.content_encoding or 'utf-8'
+                    self.file_client.create_file_from_text(self.share_name, self.directory_path, self.file_name,
+                                                           self.template, content_encoding,
+                                                           content_settings=content_settings, metadata=self.tags)
+                else:
+                    self.file_client.create_file_from_path(self.share_name, self.directory_path, self.file_name,
+                                                        self.src,
+                                                        content_settings=content_settings, metadata=self.tags)
             except AzureHttpError as exc:
                 self.fail("Error creating file {0} - {1}".format(self.file, str(exc)))
 
@@ -448,7 +462,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
         )
         if not self.check_mode:
             try:
-                self.file_client.set_file_properties(self.file, content_settings=content_settings)
+                self.file_client.set_file_properties(self.share_name, self.directory_path, self.file_name, content_settings=content_settings)
             except AzureHttpError as exc:
                 self.fail("Update file content settings {0}:{1} - {2}".format('self.container', self.file, str(exc)))
 
