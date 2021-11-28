@@ -92,7 +92,7 @@ options:
             - When restarting container, wait in secondes for completion.
             - If missing, restart async
         type: int
-    execute:
+    terminal:
         description:
             - Required when executing command in container.
         type: dict
@@ -350,7 +350,7 @@ EXAMPLES = '''
       resource_group: "myResourceGroup"
       name: "myContainerInstanceGroup"
       state: "execute"
-      execute:
+      terminal:
         container: "myContainerInstance"
         lines:
           - 'cd $JBOSS_HOME/bin'
@@ -568,7 +568,7 @@ volumes_spec = dict(
     git_repo=dict(type='dict', options=git_repo_volume_spec)
 )
 
-execute_spec = dict(
+terminal_spec = dict(
     container=dict(type='str',required=True),
     command=dict(type='str',default='/bin/sh'),
     lines=dict(type='list',elements='str',required=True),
@@ -650,9 +650,9 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                 type='int',
                 default=None
             ),
-            execute=dict(
+            terminal=dict(
                 type='dict', 
-                options=execute_spec,
+                options=terminal_spec,
                 default=None
             )
         )
@@ -674,9 +674,9 @@ class AzureRMContainerInstance(AzureRMModuleBase):
 
         required_if = [
             ('state', 'present', ['containers']),
-            ('state', 'execute', ['execute'])
+            ('state', 'execute', ['terminal'])
         ]
-        mutually_exclusive = [['containers', 'execute']]
+        mutually_exclusive = [['containers', 'terminal']]
 
         super(AzureRMContainerInstance, self).__init__(derived_arg_spec=self.module_arg_spec,
                                                        mutually_exclusive=mutually_exclusive,
@@ -769,15 +769,15 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         return self.results
 
     def execute_containerinstance(self, response):
-        self.log("Execute in container instance {0}.{1}".format(self.name, self.execute['container']))
+        self.log("Execute in container instance {0}.{1}".format(self.name, self.terminal['container']))
         terminal = None
         try:
             execResponse = self.containerinstance_client.container.execute_command(
                     resource_group_name=self.resource_group, container_group_name=self.name, 
-                    container_name=self.execute['container'], command=self.execute['command'], terminal_size={"rows": 12,"cols": 200})
+                    container_name=self.terminal['container'], command=self.terminal['command'], terminal_size={"rows": 12,"cols": 200})
             
-            terminal = AzureRMTerminal(execResponse, self.execute)
-            terminal.exec(self.execute['lines'])
+            terminal = AzureRMTerminal(execResponse, self.terminal)
+            terminal.exec(self.terminal['lines'])
             terminal.wait()
             self.results['console'] = terminal.console
 
