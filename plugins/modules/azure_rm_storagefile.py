@@ -313,7 +313,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
                     if self.quota and self.share_obj.properties.quota != self.quota:
                         self.file_client.set_share_properties(self.share_name, self.quota)
                         self.results['changed'] = True
-                    update_tags, tags = self.update_tags(self.share_obj.metadata)
+                    update_tags, tags = self.update_tags(self.share_obj.get('tags'))
                     if update_tags:
                         self.file_client.set_share_metadata(self.share_name, tags)
                         self.results['changed'] = True
