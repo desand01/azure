@@ -421,11 +421,26 @@ frontend_ip_configuration_spec = dict(
     )
 )
 
+backend_addresses_spec = dict(
+    name=dict(
+        type='str',
+        required=True
+    ),
+    ip_address=dict(
+        type='str',
+        required=True
+    )
+)
 
 backend_address_pool_spec = dict(
     name=dict(
         type='str',
         required=True
+    ),
+    backend_addresses=dict (
+        type='list',
+        elements='dict',
+        options=backend_addresses_spec
     )
 )
 
@@ -558,7 +573,13 @@ load_balancing_rule_spec = dict(
     ),
     enable_floating_ip=dict(
         type='bool'
-    )
+    ),
+    enable_tcp_reset=dict(
+        type='bool'
+    ),
+    disable_outbound_snat=dict(
+        type='bool'
+    ),
 )
 
 
@@ -668,10 +689,15 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
             ),
             natpool_protocol=dict(
                 type='str'
+            ),
+            virtual_network=dict(
+                type='str',
+                required=True
             )
         )
 
         self.resource_group = None
+        self.virtual_network = None
         self.name = None
         self.location = None
         self.sku = None
@@ -767,14 +793,19 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
                     idle_timeout=self.idle_timeout,
                     enable_floating_ip=False
                 )] if self.protocol else None
-
+            
             # create new load balancer structure early, so it can be easily compared
             frontend_ip_configurations_param = [self.network_models.FrontendIPConfiguration(
                 name=item.get('name'),
                 public_ip_address=self.get_public_ip_address_instance(item.get('public_ip_address')) if item.get('public_ip_address') else None,
                 private_ip_address=item.get('private_ip_address'),
                 private_ip_allocation_method=item.get('private_ip_allocation_method'),
-                subnet=self.network_models.Subnet(id=item.get('subnet')) if item.get('subnet') else None
+                subnet=self.network_models.Subnet(id=subnet_id(
+                    self.subscription_id,
+                    self.resource_group,
+                    self.virtual_network ,
+                    item.get('subnet'))
+                ) if item.get('subnet') else None
             ) for item in self.frontend_ip_configurations] if self.frontend_ip_configurations else None
 
             backend_address_pools_param = [self.network_models.BackendAddressPool(
@@ -835,7 +866,9 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
                 frontend_port=item.get('frontend_port'),
                 backend_port=item.get('backend_port'),
                 idle_timeout_in_minutes=item.get('idle_timeout'),
-                enable_floating_ip=item.get('enable_floating_ip')
+                enable_floating_ip=item.get('enable_floating_ip'),
+                enable_tcp_reset=item.get('enable_tcp_reset'),
+                disable_outbound_snat=item.get('disable_outbound_snat')
             ) for item in self.load_balancing_rules] if self.load_balancing_rules else None
 
             inbound_nat_rules_param = [self.network_models.InboundNatRule(
@@ -903,6 +936,32 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
             self.delete_load_balancer()
             self.results['state'] = None
 
+        #create or update backend address pools
+        if self.state == 'present' and self.backend_address_pools:
+            for pool in self.backend_address_pools:
+                if pool['backend_addresses']:
+                    if self.sku == 'Basic':
+                        self.fail('Backend address pool not supported with Basic sku load balancer, use Standard sku')
+                    self.log('Fetching backend pools {0}'.format(pool.get('name')))
+                    address_pools = self.get_backend_address_pools(pool.get('name'))
+                    if address_pools:
+                        new_address_pools = self.network_models.BackendAddressPool(
+                                            name=pool.get('name'),
+                                            load_balancer_backend_addresses=self._backend_addresses(pool)
+                        )
+                        new_address_pools = self.object_assign_backend_pool(new_address_pools, address_pools)
+                        address_pools_dict = address_pools.as_dict()
+                        new_dict = new_address_pools.as_dict()
+                        if not default_compare(new_dict, address_pools_dict, ''):
+                            changed = True
+                        else:
+                            changed = False
+                    else:
+                        changed = True
+                    if changed:
+                        self.create_or_update_backend_address_pools(new_address_pools)
+                        self.results['changed'] = changed
+
         return self.results
 
     def get_public_ip_address_instance(self, id):
@@ -943,6 +1002,41 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
                 setattr(patch, key, getattr(origin, key))
         return patch
 
+    def object_assign_backend_pool(self, patch, origin):
+        attribute_map = set(self.network_models.BackendAddressPool._attribute_map.keys()) - set(self.network_models.BackendAddressPool._validation.keys())
+        for key in attribute_map:
+            if not getattr(patch, key):
+                setattr(patch, key, getattr(origin, key))
+        if patch.load_balancer_backend_addresses:
+            for item in patch.load_balancer_backend_addresses:
+                origine_backend_addresse = self.object_assign_search_backend_address(origin, item.name)
+                if origine_backend_addresse:
+                    self.object_assign_backend_address(item, origine_backend_addresse)
+        return patch
+
+    def object_assign_search_backend_address(self, origin, name):
+        if origin.load_balancer_backend_addresses:
+            for item in origin.load_balancer_backend_addresses:
+                if item.name == name:
+                    return item
+        return None
+
+    def object_assign_backend_address(self, patch, origin):
+        attribute_map = set(self.network_models.LoadBalancerBackendAddress._attribute_map.keys()) - set(self.network_models.LoadBalancerBackendAddress._validation.keys())
+        for key in attribute_map:
+            if not getattr(patch, key):
+                setattr(patch, key, getattr(origin, key))
+        self.object_assign_sub_resource(patch.virtual_network, origin.virtual_network)
+        return patch
+
+    def object_assign_sub_resource(self, patch, origin):
+        #attribute_map = set(self.network_models.VirtualNetwork._attribute_map.keys()) - set(self.network_models.VirtualNetwork._validation.keys())
+        attribute_map = set(self.network_models.SubResource._attribute_map.keys()) - set(self.network_models.SubResource._validation.keys())
+        for key in attribute_map:
+            if not getattr(patch, key):
+                setattr(patch, key, getattr(origin, key))
+        return patch
+
     def assign_protocol(self, patch, origin):
         attribute_map = ['probes', 'inbound_nat_rules', 'inbound_nat_pools', 'load_balancing_rules']
         for attribute in attribute_map:
@@ -957,6 +1051,37 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
                 ref = refs[0] if len(refs) > 0 else None
                 item.protocol = ref.protocol if ref else 'Tcp'
         return patch
+
+    def get_backend_address_pools(self, name):
+        """Get a backend address pool of a load balancer"""
+        self.log('Fetching loadbalancer {0}'.format(self.name))
+        try:
+            return self.network_client.load_balancer_backend_address_pools.get(self.resource_group, self.name, name)
+        except CloudError:
+            return None
+
+    def create_or_update_backend_address_pools(self, param):
+        try:
+            poller = self.network_client.load_balancer_backend_address_pools.create_or_update(self.resource_group, self.name, param.name ,param)
+            new_lb = self.get_poller_result(poller)
+            return new_lb
+        except CloudError as exc:
+            self.fail("Error creating or updating load balancer {0} - {1}".format(self.name, str(exc)))
+    
+    def _backend_addresses(self, backendAddressPool):
+        backend_addresses  = [self.network_models.LoadBalancerBackendAddress(
+                name=item.get('name'),
+                ip_address=item.get('ip_address'),
+                #virtual_network=self.network_models.VirtualNetwork(
+                virtual_network=self.network_models.SubResource(
+                    id=virtual_network_id(
+                        self.subscription_id,
+                        self.resource_group,
+                        self.virtual_network
+                    )
+                )
+            ) for item in backendAddressPool['backend_addresses']] if backendAddressPool['backend_addresses'] else None
+        return backend_addresses
 
 
 def default_compare(new, old, path):
@@ -1017,6 +1142,23 @@ def probe_id(subscription_id, resource_group_name, load_balancer_name, name):
         subscription_id,
         resource_group_name,
         load_balancer_name,
+        name
+    )
+
+def subnet_id(subscription_id, resource_group_name, virtual_networks ,name):
+    """Generate the id for a frontend ip configuration"""
+    return '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/virtualNetworks/{2}/subnets/{3}'.format(
+        subscription_id,
+        resource_group_name,
+        virtual_networks,
+        name
+    )
+
+def virtual_network_id(subscription_id, resource_group_name, name):
+    """Generate the id for a frontend ip configuration"""
+    return '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/virtualNetworks/{2}'.format(
+        subscription_id,
+        resource_group_name,
         name
     )
 
