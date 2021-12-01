@@ -743,6 +743,12 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
         if not self.location:
             self.location = resource_group.location
 
+        for pool in self.backend_address_pools:
+            if pool['backend_addresses']:
+                if self.sku == 'Basic':
+                    self.fail('Backend address pool not supported with Basic sku load balancer, use Standard sku')
+                break
+
         load_balancer = self.get_load_balancer()
 
         if self.state == 'present':
@@ -867,7 +873,7 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
                 backend_port=item.get('backend_port'),
                 idle_timeout_in_minutes=item.get('idle_timeout'),
                 enable_floating_ip=item.get('enable_floating_ip'),
-                enable_tcp_reset=item.get('enable_tcp_reset'),
+                enable_tcp_reset=False if item.get('protocol') == 'Udp' else item.get('enable_tcp_reset'),
                 disable_outbound_snat=item.get('disable_outbound_snat')
             ) for item in self.load_balancing_rules] if self.load_balancing_rules else None
 
@@ -885,13 +891,13 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
                 frontend_port=item.get('frontend_port'),
                 backend_port=item.get('backend_port'),
                 idle_timeout_in_minutes=item.get('idle_timeout'),
-                enable_tcp_reset=item.get('enable_tcp_reset'),
+                enable_tcp_reset=False if item.get('protocol') == 'Udp' else item.get('enable_tcp_reset'),
                 enable_floating_ip=item.get('enable_floating_ip')
             ) for item in self.inbound_nat_rules] if self.inbound_nat_rules else None
 
             # construct the new instance, if the parameter is none, keep remote one
             self.new_load_balancer = self.network_models.LoadBalancer(
-                sku=self.network_models.LoadBalancerSku(name=self.sku) if self.sku else None,
+                sku=self.network_models.LoadBalancerSku(name=self.sku) if self.sku else 'Standard',
                 location=self.location,
                 tags=self.tags,
                 frontend_ip_configurations=frontend_ip_configurations_param,
@@ -940,8 +946,6 @@ class AzureRMLoadBalancer(AzureRMModuleBase):
         if self.state == 'present' and self.backend_address_pools:
             for pool in self.backend_address_pools:
                 if pool['backend_addresses']:
-                    if self.sku == 'Basic':
-                        self.fail('Backend address pool not supported with Basic sku load balancer, use Standard sku')
                     self.log('Fetching backend pools {0}'.format(pool.get('name')))
                     address_pools = self.get_backend_address_pools(pool.get('name'))
                     if address_pools:

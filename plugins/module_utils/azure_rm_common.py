@@ -1711,6 +1711,7 @@ class AzureRMTerminal(object):
     _lastline = None
     _wait_regex = None
     _wait_timeout = 120
+    _fail_on_timeout = True
     _exec_info = dict(
         uri='',
         password='',
@@ -1723,6 +1724,7 @@ class AzureRMTerminal(object):
         self._exec_info['password'] = containerExecResponse.password
         self._wait_regex = re.compile(args['wait_regex'] or '[#$:] $')
         self._wait_timeout = args['wait_timeout'] or 120
+        self._fail_on_timeout = args['fail_on_timeout'] or True
         import _thread
         _thread.start_new_thread(self._ws_thread, ())
 
@@ -1744,10 +1746,11 @@ class AzureRMTerminal(object):
                 sleep(1)
             else:
                 return
-        msg = 'Empty console'
-        if len(ar) > 0:
-            msg = ar[len(ar) - 1]
-        raise AzureRMTerminalException('Timeout - {0} : {1}'.format(self._lastline, msg))
+        if self._fail_on_timeout:
+            msg = 'Empty console'
+            if len(ar) > 0:
+                msg = ar[len(ar) - 1]
+            raise AzureRMTerminalException('Timeout - {0} : {1}'.format(self._lastline, msg))
 
     def _ws_thread(self, *args):
         import websocket

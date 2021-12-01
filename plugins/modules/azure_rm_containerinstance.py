@@ -573,7 +573,8 @@ terminal_spec = dict(
     command=dict(type='str',default='/bin/sh'),
     lines=dict(type='list',elements='str',required=True),
     wait_timeout=dict(type='int',default=120),
-    wait_regex=dict(type='str',default='[#$:] $')
+    wait_regex=dict(type='str',default='[#$:] $'),
+    fail_on_timeout=dict(type='bool',default=True)
 )
 
 class AzureRMContainerInstance(AzureRMModuleBase):
@@ -798,6 +799,8 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                 poller = self.containerinstance_client.container_groups.start(resource_group_name=self.resource_group, container_group_name=self.name)
             if self.restart_wait is not None:
                 poller.wait(self.restart_wait)
+                response = self.get_poller_result(poller, self.restart_wait)
+                self.results['state']['result'] = poller.result()
                 if not poller.done():
                     return 'time-out'
             self.results['state'][state_name] = poller.status()
@@ -871,7 +874,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                 for port in all_ports:
                     ports.append(self.cgmodels.Port(port=port, protocol="TCP"))
                 ip_address = self.cgmodels.IpAddress(ports=ports, dns_name_label=self.dns_name_label, type='public')
-
+                
         parameters = self.cgmodels.ContainerGroup(location=self.location,
                                                   containers=containers,
                                                   image_registry_credentials=registry_credentials,
