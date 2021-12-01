@@ -778,7 +778,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                     container_name=self.terminal['container'], command=self.terminal['command'], terminal_size={"rows": 12,"cols": 200})
             
             terminal = AzureRMTerminal(execResponse, self.terminal)
-            terminal.exec(self.terminal['lines'])
+            terminal.execute(self.terminal['lines'])
             terminal.wait()
             self.results['console'] = terminal.console
 
