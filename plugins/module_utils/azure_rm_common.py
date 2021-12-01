@@ -1760,7 +1760,7 @@ class AzureRMTerminal(object):
     def _ws_message(self, ws, message):
         self._exec_info['console'].append(message)
 
-    def exec(self, lines):
+    def execute(self, lines):
         for line in lines:
             self._lastline = line
             self.wait()
