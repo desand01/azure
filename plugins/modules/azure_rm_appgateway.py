@@ -699,7 +699,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 type='str',
                 default='present',
                 choices=['present', 'absent']
-            )
+            ),
+            force=dict(type='bool', default=False),
         )
 
         self.resource_group = None
@@ -710,6 +711,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         self.mgmt_client = None
         self.state = None
         self.to_do = Actions.NoAction
+        self.force = None
 
         super(AzureRMApplicationGateways, self).__init__(derived_arg_spec=self.module_arg_spec,
                                                          supports_check_mode=True,
@@ -727,7 +729,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 elif key == "location":
                     self.parameters["location"] = kwargs[key]
                 elif key == "sku":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     if 'name' in ev:
                         if ev['name'] == 'standard_small':
                             ev['name'] = 'Standard_Small'
@@ -754,7 +756,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                             ev['tier'] = 'WAF_v2'
                     self.parameters["sku"] = ev
                 elif key == "ssl_policy":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     if 'policy_type' in ev:
                         ev['policy_type'] = _snake_to_camel(ev['policy_type'], True)
                     if 'policy_name' in ev:
@@ -786,8 +788,9 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                         if suites is not None:
                             for i in range(len(suites)):
                                 suites[i] = suites[i].upper()
+                    self.parameters[key] = ev
                 elif key == "gateway_ip_configurations":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
                         if 'subnet' in item and 'name' in item['subnet'] and 'virtual_network_name' in item['subnet']:
@@ -796,13 +799,13 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                                            item['subnet']['virtual_network_name'],
                                            item['subnet']['name'])
                             item['subnet'] = {'id': id}
-                    self.parameters["gateway_ip_configurations"] = kwargs[key]
+                    self.parameters["gateway_ip_configurations"] = ev
                 elif key == "authentication_certificates":
                     self.parameters["authentication_certificates"] = kwargs[key]
                 elif key == "ssl_certificates":
                     self.parameters["ssl_certificates"] = kwargs[key]
                 elif key == "redirect_configurations":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
                         if 'redirect_type' in item:
@@ -815,7 +818,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                             item['target_listener'] = {'id': id}
                     self.parameters["redirect_configurations"] = ev
                 elif key == "frontend_ip_configurations":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
                         if 'private_ip_allocation_method' in item:
@@ -837,7 +840,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 elif key == "backend_address_pools":
                     self.parameters["backend_address_pools"] = kwargs[key]
                 elif key == "probes":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
                         if 'protocol' in item:
@@ -846,7 +849,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                             del item['host']
                     self.parameters["probes"] = ev
                 elif key == "backend_http_settings_collection":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
                         if 'protocol' in item:
@@ -861,7 +864,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                             item['probe'] = {'id': id}
                     self.parameters["backend_http_settings_collection"] = ev
                 elif key == "http_listeners":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
                         if 'frontend_ip_configuration' in item:
@@ -888,7 +891,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                         ev[i] = item
                     self.parameters["http_listeners"] = ev
                 elif key == "url_path_maps":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
                         if 'default_backend_address_pool' in item:
@@ -923,7 +926,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                         ev[i] = item
                     self.parameters["url_path_maps"] = ev
                 elif key == "request_routing_rules":
-                    ev = kwargs[key]
+                    ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
                         if 'rule_type' in item and item['rule_type'] == 'path_based_routing' and 'backend_address_pool' in item:
@@ -995,6 +998,11 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 self.to_do = Actions.Update
 
         if (self.to_do == Actions.Update):
+            if not self.force:
+                object_assign_original(old_response, self.parameters, 'backend_address_pools')
+                object_assign_original(old_response, self.parameters, 'backend_http_settings_collection')
+                object_assign_original(old_response, self.parameters, 'http_listeners')
+                object_assign_original(old_response, self.parameters, 'request_routing_rules')
             if (self.parameters['location'] != old_response['location'] or
                     self.parameters['sku']['name'] != old_response['sku']['name'] or
                     self.parameters['sku']['tier'] != old_response['sku']['tier'] or
@@ -1240,6 +1248,22 @@ def array_to_dict(array):
                 if isinstance(item[nested], list):
                     new[index][nested] = array_to_dict(item[nested])
     return new
+
+def object_assign_original(old_params, new_params, param_name, index_name = 'name'):
+    old = old_params.get(param_name) or []
+    new = new_params.get(param_name) or []
+    newArray = []
+    newvalues = {}
+    for item in new:
+        newvalues[item[index_name]] = item
+    for item in old:
+        if not item[index_name] in newvalues:
+            newArray.append(item)
+        else:
+            newArray.append(newvalues.pop(item[index_name]))
+    for key in newvalues:
+        newArray.append(newvalues[key])
+    new_params[param_name] = newArray
 
 
 def main():
