@@ -1708,6 +1708,7 @@ class AzureRMTerminalException(Exception):
 
 class AzureRMTerminal(object):
     _websocket = None
+    _ready = False
     _lastline = None
     _wait_regex = None
     _wait_timeout = 120
@@ -1727,6 +1728,7 @@ class AzureRMTerminal(object):
         self._fail_on_timeout = True if args['fail_on_timeout'] is None else args['fail_on_timeout']
         import _thread
         _thread.start_new_thread(self._ws_thread, ())
+        self.wait(15)
 
     def wait(self, timeout=None):
         _timeout = timeout or self._wait_timeout
@@ -1736,7 +1738,7 @@ class AzureRMTerminal(object):
         while x < _timeout:
             x += 1
             current = len(ar)
-            if current == 0:
+            if current == 0 or self._ready == False:
                 sleep(1)
             elif size < len(ar):
                 size = len(ar)
@@ -1757,6 +1759,7 @@ class AzureRMTerminal(object):
         
     def _ws_open(self, ws):
         ws.send(self._exec_info['password'])
+        self._ready = True
 
     def _ws_message(self, ws, message):
         self._exec_info['console'].append(message)
@@ -1764,9 +1767,9 @@ class AzureRMTerminal(object):
     def execute(self, lines):
         for line in lines:
             self._lastline = line
-            self.wait()
             try:
                 self._websocket.send(line + '\n')
+                self.wait()
             except Exception as exc:
                 raise AzureRMTerminalException('Exception - {0} : {1}'.format(str(exc.args), self._lastline))
 

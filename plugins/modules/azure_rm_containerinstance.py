@@ -779,7 +779,6 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             
             terminal = AzureRMTerminal(execResponse, self.terminal)
             terminal.execute(self.terminal['lines'])
-            terminal.wait()
             self.results['console'] = terminal.console
 
         except CloudError as exc:
