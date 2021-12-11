@@ -469,12 +469,14 @@ state:
     returned: if state is restart
     type: dict
 '''
-from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase, AzureRMTerminal
+from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBaseEx, AzureRMTerminal
 from ansible.module_utils.common.dict_transformations import _snake_to_camel
 
 try:
     from msrestazure.azure_exceptions import CloudError
-    from msrest.polling import LROPoller
+    #from msrest.polling import LROPoller
+    from azure.core.polling import LROPoller
+    from azure.core.exceptions import HttpResponseError
     from azure.mgmt.containerinstance import ContainerInstanceManagementClient
 except ImportError:
     # This is handled in azure_rm_common
@@ -532,13 +534,21 @@ volume_mount_var_spec = dict(
     read_only=dict(type='bool')
 )
 
+port_spec = dict(
+    port=dict(type='int', required=True),
+    protocol=dict(
+        type='str', 
+        default='TCP',
+        choices=["TCP", "UDP"]
+    )
+)
 
 container_spec = dict(
     name=dict(type='str', required=True),
     image=dict(type='str', required=True),
     memory=dict(type='float', default=1.5),
     cpu=dict(type='float', default=1),
-    ports=dict(type='list', elements='int'),
+    ports=dict(type='list', elements='dict', options=port_spec),
     commands=dict(type='list', elements='str'),
     environment_variables=dict(type='list', elements='dict', options=env_var_spec),
     volume_mounts=dict(type='list', elements='dict', options=volume_mount_var_spec)
@@ -559,6 +569,11 @@ azure_file_volume_spec = dict(
     storage_account_key=dict(type='str', required=True, no_log=True)
 )
 
+subnet_spec = dict(
+    name=dict(type='str'),
+    vnet=dict(type='str', required=True),
+    subnet=dict(type='str', required=True)
+)
 
 volumes_spec = dict(
     name=dict(type='str', required=True),
@@ -577,7 +592,7 @@ terminal_spec = dict(
     fail_on_timeout=dict(type='bool',default=True)
 )
 
-class AzureRMContainerInstance(AzureRMModuleBase):
+class AzureRMContainerInstance(AzureRMModuleBaseEx):
     """Configuration class for an Azure RM container instance resource"""
 
     def __init__(self):
@@ -606,15 +621,22 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             ip_address=dict(
                 type='str',
                 default='none',
-                choices=['public', 'none']
+                choices=['public', 'private' ,'none']
+            ),
+            subnets=dict(
+                type='list',
+                elements='dict',
+                options=subnet_spec,
+                default=[],
             ),
             dns_name_label=dict(
                 type='str',
             ),
             ports=dict(
                 type='list',
-                elements='int',
-                default=[]
+                elements='dict',
+                options=port_spec,
+                default=[],
             ),
             registry_login_server=dict(
                 type='str',
@@ -663,6 +685,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         self.location = None
         self.state = None
         self.ip_address = None
+        self.subnets = None
         self.dns_name_label = None
         self.containers = None
         self.restart_policy = None
@@ -675,9 +698,10 @@ class AzureRMContainerInstance(AzureRMModuleBase):
 
         required_if = [
             ('state', 'present', ['containers']),
-            ('state', 'execute', ['terminal'])
+            ('state', 'execute', ['terminal']),
+            ('ip_address', 'private', ['subnets'])
         ]
-        mutually_exclusive = [['containers', 'terminal']]
+        mutually_exclusive = [['containers', 'terminal'],['subnets','dns_name_label']]
 
         super(AzureRMContainerInstance, self).__init__(derived_arg_spec=self.module_arg_spec,
                                                        mutually_exclusive=mutually_exclusive,
@@ -773,9 +797,10 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         self.log("Execute in container instance {0}.{1}".format(self.name, self.terminal['container']))
         terminal = None
         try:
-            execResponse = self.containerinstance_client.container.execute_command(
+            execRequest = self.cgmodels.ContainerExecRequest(command=self.terminal['command'], terminal_size={"rows": 12,"cols": 200})
+            execResponse = self.containerinstance_client.containers.execute_command(
                     resource_group_name=self.resource_group, container_group_name=self.name, 
-                    container_name=self.terminal['container'], command=self.terminal['command'], terminal_size={"rows": 12,"cols": 200})
+                    container_name=self.terminal['container'], container_exec_request=execRequest)
             
             terminal = AzureRMTerminal(execResponse, self.terminal)
             terminal.execute(self.terminal['lines'])
@@ -792,14 +817,14 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         try:
             state_name = 'restart'
             if response['instance_view']['state'] == 'Running':
-                poller = self.containerinstance_client.container_groups.restart(resource_group_name=self.resource_group, container_group_name=self.name)
+                poller = self.containerinstance_client.container_groups.begin_restart(resource_group_name=self.resource_group, container_group_name=self.name)
             else:
                 state_name = 'start'
-                poller = self.containerinstance_client.container_groups.start(resource_group_name=self.resource_group, container_group_name=self.name)
+                poller = self.containerinstance_client.container_groups.begin_start(resource_group_name=self.resource_group, container_group_name=self.name)
             if self.restart_wait is not None:
                 poller.wait(self.restart_wait)
-                response = self.get_poller_result(poller, self.restart_wait)
-                self.results['state']['result'] = poller.result()
+                #response = self.get_poller_result(poller, self.restart_wait)
+                #self.results['state']['result'] = poller.result()
                 if not poller.done():
                     return 'time-out'
             self.results['state'][state_name] = poller.status()
@@ -825,7 +850,7 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         ip_address = None
 
         containers = []
-        all_ports = set([])
+        all_ports = dict()
         for container_def in self.containers:
             name = container_def.get("name")
             image = container_def.get("image")
@@ -839,8 +864,8 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             port_list = container_def.get("ports")
             if port_list:
                 for port in port_list:
-                    all_ports.add(port)
-                    ports.append(self.cgmodels.ContainerPort(port=port))
+                    all_ports[port['port']] = port
+                    ports.append(self.cgmodels.ContainerPort(port=port['port'],protocol=port['protocol']))
 
             variable_list = container_def.get("environment_variables")
             if variable_list:
@@ -866,30 +891,40 @@ class AzureRMContainerInstance(AzureRMModuleBase):
                                                       environment_variables=variables,
                                                       volume_mounts=volume_mounts))
 
-        if self.ip_address == 'public':
+        if self.ip_address == 'public' or self.ip_address == 'private':
             # get list of ports
-            if len(all_ports) > 0:
+            if all_ports:
                 ports = []
-                for port in all_ports:
-                    ports.append(self.cgmodels.Port(port=port, protocol="TCP"))
-                ip_address = self.cgmodels.IpAddress(ports=ports, dns_name_label=self.dns_name_label, type='public')
+                for key in all_ports.keys():
+                    port = all_ports[key]
+                    ports.append(self.cgmodels.Port(port=port['port'], protocol=port['protocol']))
+                ip_address = self.cgmodels.IpAddress(ports=ports, dns_name_label=self.dns_name_label, type=self.ip_address)
+                if self.ip_address == 'private':
+                    subnets = [self.cgmodels.ContainerGroupSubnetId(
+                        name=item.get('name'),
+                        id=subnet_id(self.subscription_id,
+                                        self.resource_group,
+                                        item.get('vnet'),
+                                        item.get('subnet'))
+                    ) for item in self.subnets] if self.subnets else None
                 
         parameters = self.cgmodels.ContainerGroup(location=self.location,
                                                   containers=containers,
                                                   image_registry_credentials=registry_credentials,
                                                   restart_policy=_snake_to_camel(self.restart_policy, True) if self.restart_policy else None,
                                                   ip_address=ip_address,
+                                                  subnet_ids=subnets,
                                                   os_type=self.os_type,
                                                   volumes=self.volumes,
                                                   tags=self.tags)
 
         try:
-            response = self.containerinstance_client.container_groups.create_or_update(resource_group_name=self.resource_group,
-                                                                                       container_group_name=self.name,
-                                                                                       container_group=parameters)
+            response = self.containerinstance_client.container_groups.begin_create_or_update(resource_group_name=self.resource_group,
+                                                                                            container_group_name=self.name,
+                                                                                            container_group=parameters)
             if isinstance(response, LROPoller):
                 response = self.get_poller_result(response)
-        except CloudError as exc:
+        except HttpResponseError as exc:
             self.fail("Error when creating ACI {0}: {1}".format(self.name, exc.message or str(exc)))
 
         return response.as_dict()
@@ -902,9 +937,9 @@ class AzureRMContainerInstance(AzureRMModuleBase):
         '''
         self.log("Deleting the container instance {0}".format(self.name))
         try:
-            response = self.containerinstance_client.container_groups.delete(resource_group_name=self.resource_group, container_group_name=self.name)
+            response = self.containerinstance_client.container_groups.begin_delete(resource_group_name=self.resource_group, container_group_name=self.name)
             return True
-        except CloudError as exc:
+        except HttpResponseError as exc:
             self.fail('Error when deleting ACI {0}: {1}'.format(self.name, exc.message or str(exc)))
             return False
 
@@ -921,6 +956,11 @@ class AzureRMContainerInstance(AzureRMModuleBase):
             found = True
             self.log("Response : {0}".format(response))
             self.log("Container instance : {0} found".format(response.name))
+        except HttpResponseError as e:
+            if e.status_code == 404:
+                self.log('Did not find the container instance.')
+            else:
+                raise e
         except CloudError as e:
             self.log('Did not find the container instance.')
         if found is True:
@@ -928,6 +968,14 @@ class AzureRMContainerInstance(AzureRMModuleBase):
 
         return False
 
+def subnet_id(subscription_id, resource_group_name, virtual_network_name, name):
+    """Generate the id for a subnet in a virtual network"""
+    return '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/virtualNetworks/{2}/subnets/{3}'.format(
+        subscription_id,
+        resource_group_name,
+        virtual_network_name,
+        name
+    )
 
 def main():
     """Main execution"""

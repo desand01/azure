@@ -1703,6 +1703,94 @@ class AzureRMAuth(object):
         #         log_file.write(msg + u'\n')
 
 
+class AzureRMModuleBaseEx(AzureRMModuleBase):
+    _retrocompatibility = True
+
+    def __init__(self, derived_arg_spec, bypass_checks=False, no_log=False,
+                 check_invalid_arguments=None, mutually_exclusive=None, required_together=None,
+                 required_one_of=None, add_file_common_args=False, supports_check_mode=False,
+                 required_if=None, supports_tags=True, facts_module=False, skip_exec=False, is_ad_resource=False):
+        super(AzureRMModuleBaseEx, self).__init__(derived_arg_spec, bypass_checks, no_log,
+                 check_invalid_arguments, mutually_exclusive, required_together,
+                 required_one_of, add_file_common_args, supports_check_mode,
+                 required_if, supports_tags, facts_module, skip_exec, is_ad_resource)
+
+    @property
+    def containerinstance_client(self):
+        self.log('Getting container instance mgmt client')
+        if not self._containerinstance_client:
+            self._retrocompatibility = False
+            self._containerinstance_client = self.get_mgmt_svc_client(ContainerInstanceManagementClient,
+                                                                      base_url=self._cloud_environment.endpoints.resource_manager,
+                                                                      api_version='2021-09-01')
+            self._retrocompatibility = True
+
+        return self._containerinstance_client
+
+    
+    def get_mgmt_svc_client(self, client_type, base_url=None, api_version=None, suppress_subscription_id=False):
+        self.log('Getting management service client ex {0}'.format(client_type.__name__))
+        if self._retrocompatibility:
+            return super(AzureRMModuleBaseEx, self).get_mgmt_svc_client(client_type, base_url, api_version, suppress_subscription_id)
+        self.check_client_version(client_type)
+
+        client_argspec = inspect.getargspec(client_type.__init__)
+
+        if not base_url:
+            # most things are resource_manager, don't make everyone specify
+            base_url = self.azure_auth._cloud_environment.endpoints.resource_manager
+
+        from azure.identity import DefaultAzureCredential
+
+        os.environ.setdefault('AZURE_CLIENT_SECRET', self.azure_auth.credentials['secret'])
+        os.environ.setdefault('AZURE_TENANT_ID', self.azure_auth.credentials['tenant'])
+        default_credential = DefaultAzureCredential()
+        client_kwargs = dict(credential=default_credential, subscription_id=self.azure_auth.subscription_id, base_url=base_url)
+        # Some management clients do not take a subscription ID as parameters.
+        #if suppress_subscription_id:
+        #    client_kwargs = dict(credential=self.azure_auth.azure_credentials, base_url=base_url)
+        #else:
+        #    client_kwargs = dict(credential=self.azure_auth.azure_credentials, subscription_id=self.azure_auth.subscription_id, base_url=base_url)
+
+        api_profile_dict = {}
+
+        if self.api_profile:
+            api_profile_dict = self.get_api_profile(client_type.__name__, self.api_profile)
+
+        # unversioned clients won't accept profile; only send it if necessary
+        # clients without a version specified in the profile will use the default
+        if api_profile_dict and 'profile' in client_argspec.args:
+            client_kwargs['profile'] = api_profile_dict
+
+        # If the client doesn't accept api_version, it's unversioned.
+        # If it does, favor explicitly-specified api_version, fall back to api_profile
+        if 'api_version' in client_argspec.args:
+            profile_default_version = api_profile_dict.get('default_api_version', None)
+            if api_version or profile_default_version:
+                client_kwargs['api_version'] = api_version or profile_default_version
+                if 'profile' in client_kwargs:
+                    # remove profile; only pass API version if specified
+                    client_kwargs.pop('profile')
+
+        client = client_type(**client_kwargs)
+
+        # FUTURE: remove this once everything exposes models directly (eg, containerinstance)
+        try:
+            getattr(client, "models")
+        except AttributeError:
+            def _ansible_get_models(self, *arg, **kwarg):
+                return self._ansible_models
+
+            setattr(client, '_ansible_models', importlib.import_module(client_type.__module__).models)
+            client.models = types.MethodType(_ansible_get_models, client)
+
+        #client.config = self.add_user_agent(client.config)
+
+        if self.azure_auth._cert_validation_mode == 'ignore':
+            client.config.session_configuration_callback = self._validation_ignore_callback
+
+        return client
+
 class AzureRMTerminalException(Exception):
     pass
 
