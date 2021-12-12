@@ -32,9 +32,9 @@ options:
             - The OS type of containers.
         type: str
         choices:
-            - linux
-            - windows
-        default: linux
+            - Linux
+            - Windows
+        default: Linux
     state:
         description:
             - Assert the state of the container instance. Use C(present) to create or update an container instance and C(absent) to delete it.
@@ -58,7 +58,8 @@ options:
             - Default is C(none) and creating an instance without public IP.
         type: str
         choices:
-            - public
+            - Public
+            - Private
             - none
         default: 'none'
     dns_name_label:
@@ -291,8 +292,8 @@ EXAMPLES = '''
     azure_rm_containerinstance:
       resource_group: myResourceGroup
       name: myContainerInstanceGroup
-      os_type: linux
-      ip_address: public
+      os_type: Linux
+      ip_address: Public
       containers:
         - name: myContainer1
           image: httpd
@@ -305,8 +306,8 @@ EXAMPLES = '''
     azure_rm_containerinstance:
       resource_group: myResourceGroup
       name: myContainerInstanceGroupz
-      os_type: linux
-      ip_address: public
+      os_type: Linux
+      ip_address: Public
       containers:
         - name: mycontainer1
           image: httpd
@@ -328,8 +329,8 @@ EXAMPLES = '''
     azure_rm_containerinstance:
       resource_group: myResourceGroup
       name: myContainerInstanceGroup
-      os_type: linux
-      ip_address: public
+      os_type: Linux
+      ip_address: Public
       containers:
         - name: mycontainer1
           image: httpd
@@ -471,6 +472,7 @@ state:
 '''
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBaseEx, AzureRMTerminal
 from ansible.module_utils.common.dict_transformations import _snake_to_camel
+from ansible.module_utils._text import to_native
 
 try:
     from msrestazure.azure_exceptions import CloudError
@@ -607,8 +609,8 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             ),
             os_type=dict(
                 type='str',
-                default='linux',
-                choices=['linux', 'windows']
+                default='Linux',
+                choices=['Linux', 'Windows']
             ),
             state=dict(
                 type='str',
@@ -621,7 +623,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             ip_address=dict(
                 type='str',
                 default='none',
-                choices=['public', 'private' ,'none']
+                choices=['Public', 'Private' ,'none']
             ),
             subnets=dict(
                 type='list',
@@ -699,7 +701,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         required_if = [
             ('state', 'present', ['containers']),
             ('state', 'execute', ['terminal']),
-            ('ip_address', 'private', ['subnets'])
+            ('ip_address', 'Private', ['subnets'])
         ]
         mutually_exclusive = [['containers', 'terminal'],['subnets','dns_name_label']]
 
@@ -749,7 +751,8 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                 self.log("Container instance deleted")
             elif self.state == 'present':
                 self.log("Need to check if container group has to be deleted or may be updated")
-                update_tags, newtags = self.update_tags(response.get('tags', dict()))
+                oldtags = response.tags.as_dict() if response.tags else None
+                update_tags, newtags = self.update_tags(oldtags)
                 if update_tags:
                     self.tags = newtags
 
@@ -762,11 +765,18 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
 
             self.log("Need to Create / Update the container instance")
 
+            new_container = self.new_containerinstance()
+
             if self.force_update:
                 self.results['changed'] = True
                 if self.check_mode:
                     return self.results
-                response = self.create_update_containerinstance()
+                response = self.create_update_containerinstance(new_container)
+            elif self.compare(new_container, response):
+                self.results['changed'] = True
+                if self.check_mode:
+                    return self.results
+                response = self.create_update_containerinstance(new_container)
 
             self.results['id'] = response['id']
             self.results['provisioning_state'] = response['provisioning_state']
@@ -832,13 +842,13 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         except CloudError as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
 
-    def create_update_containerinstance(self):
+    def new_containerinstance(self):
         '''
-        Creates or updates a container service with the specified configuration of orchestrator, masters, and agents.
+        Creates a container service model with the specified configuration of orchestrator, masters, and agents.
 
-        :return: deserialized container instance state dictionary
+        :return: the desired container instance model
         '''
-        self.log("Creating / Updating the container instance {0}".format(self.name))
+        self.log("New container instance {0}".format(self.name))
 
         registry_credentials = None
 
@@ -891,7 +901,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                                                       environment_variables=variables,
                                                       volume_mounts=volume_mounts))
 
-        if self.ip_address == 'public' or self.ip_address == 'private':
+        if self.ip_address == 'Public' or self.ip_address == 'Private':
             # get list of ports
             if all_ports:
                 ports = []
@@ -899,7 +909,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                     port = all_ports[key]
                     ports.append(self.cgmodels.Port(port=port['port'], protocol=port['protocol']))
                 ip_address = self.cgmodels.IpAddress(ports=ports, dns_name_label=self.dns_name_label, type=self.ip_address)
-                if self.ip_address == 'private':
+                if self.ip_address == 'Private':
                     subnets = [self.cgmodels.ContainerGroupSubnetId(
                         name=item.get('name'),
                         id=subnet_id(self.subscription_id,
@@ -907,16 +917,74 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                                         item.get('vnet'),
                                         item.get('subnet'))
                     ) for item in self.subnets] if self.subnets else None
+
+        volumes = [self.cgmodels.Volume(
+            name=item.get('name'),
+            azure_file=self.cgmodels.AzureFileVolume(
+                share_name=item["azure_file"].get('share_name'),
+                read_only=item["azure_file"].get('read_only'),
+                storage_account_name=item["azure_file"].get('storage_account_name'),
+                storage_account_key=item["azure_file"].get('storage_account_key')
+            )
+        ) for item in self.volumes] if self.volumes else None
                 
-        parameters = self.cgmodels.ContainerGroup(location=self.location,
-                                                  containers=containers,
+        parameters = self.cgmodels.ContainerGroup(containers=containers,
+                                                  os_type=self.os_type,
+                                                  location=self.location,
+                                                  tags=self.tags,
+                                                  zones=None,
+                                                  identity=None,
                                                   image_registry_credentials=registry_credentials,
                                                   restart_policy=_snake_to_camel(self.restart_policy, True) if self.restart_policy else None,
                                                   ip_address=ip_address,
+                                                  volumes=volumes,
+                                                  diagnostics=None,
                                                   subnet_ids=subnets,
-                                                  os_type=self.os_type,
-                                                  volumes=self.volumes,
-                                                  tags=self.tags)
+                                                  dns_config=None,
+                                                  sku=None,
+                                                  encryption_properties=None,
+                                                  init_containers=None)
+
+        return parameters
+
+    def compare(self, new_container, old_container):
+        old_container = self.assign_account_key(new_container, old_container)
+        new_container = self.object_assign(new_container, old_container)
+        if not default_compare(new_container.as_dict(), old_container.as_dict(), ''):
+            changed = True
+        else:
+            changed = False
+        return changed
+
+    def assign_account_key(self, patch, origin):
+        attribute_map = ['volumes']
+        for attribute in attribute_map:
+            properties = getattr(patch, attribute)
+            if not properties:
+                continue
+            references = getattr(origin, attribute) if origin else []
+            for item in properties:
+                if not item.azure_file:
+                    continue
+                refs = [x for x in references if to_native(x.name) == item.name]
+                ref = refs[0] if len(refs) > 0 else None
+                ref.azure_file.storage_account_key  = item.azure_file.storage_account_key if ref else None
+        return origin
+
+    def object_assign(self, patch, origin):
+        attribute_map = set(self.cgmodels.ContainerGroup._attribute_map.keys()) - set(self.cgmodels.ContainerGroup._validation.keys())
+        for key in attribute_map:
+            if not getattr(patch, key):
+                setattr(patch, key, getattr(origin, key))
+        return patch
+
+    def create_update_containerinstance(self, parameters):
+        '''
+        Creates or updates a container service with the specified configuration of orchestrator, masters, and agents.
+
+        :return: deserialized container instance state dictionary
+        '''
+        self.log("Creating / Updating the container instance {0}".format(self.name))
 
         try:
             response = self.containerinstance_client.container_groups.begin_create_or_update(resource_group_name=self.resource_group,
@@ -964,7 +1032,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         except CloudError as e:
             self.log('Did not find the container instance.')
         if found is True:
-            return response.as_dict()
+            return response
 
         return False
 
@@ -976,6 +1044,38 @@ def subnet_id(subscription_id, resource_group_name, virtual_network_name, name):
         virtual_network_name,
         name
     )
+
+def default_compare(new, old, path):
+    if isinstance(new, dict):
+        if not isinstance(old, dict):
+            return False
+        for k in new.keys():
+            if not default_compare(new.get(k), old.get(k, None), path + '/' + k):
+                return False
+        return True
+    elif isinstance(new, list):
+        if not isinstance(old, list) or len(new) != len(old):
+            return False
+        if len(old) == 0:
+            return True
+        if isinstance(old[0], dict):
+            key = None
+            if 'id' in old[0] and 'id' in new[0]:
+                key = 'id'
+            elif 'name' in old[0] and 'name' in new[0]:
+                key = 'name'
+            new = sorted(new, key=lambda x: x.get(key, None))
+            old = sorted(old, key=lambda x: x.get(key, None))
+        else:
+            new = sorted(new)
+            old = sorted(old)
+        for i in range(len(new)):
+            if not default_compare(new[i], old[i], path + '/*'):
+                return False
+        return True
+    else:
+        return new == old
+
 
 def main():
     """Main execution"""
