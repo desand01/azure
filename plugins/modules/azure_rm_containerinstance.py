@@ -891,6 +891,12 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                     volume_mounts.append(self.cgmodels.VolumeMount(name=volume_mount.get('name'),
                                                                    mount_path=volume_mount.get('mount_path'),
                                                                    read_only=volume_mount.get('read_only')))
+            if len(volume_mounts) == 0:
+                volume_mounts = None
+            if len(variables) == 0:
+                variables = None
+            if len(ports) == 0:
+                ports = None
 
             containers.append(self.cgmodels.Container(name=name,
                                                       image=image,
