@@ -1099,6 +1099,8 @@ def default_compare(new, old, path):
                 key = 'id'
             elif 'name' in old[0] and 'name' in new[0]:
                 key = 'name'
+            elif 'port' in old[0] and 'port' in new[0]:
+                key = 'port'
             new = sorted(new, key=lambda x: x.get(key, None))
             old = sorted(old, key=lambda x: x.get(key, None))
         else:
