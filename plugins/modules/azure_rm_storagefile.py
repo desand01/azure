@@ -184,6 +184,7 @@ container:
 
 import os
 import mimetypes
+import hashlib
 
 try:
     from azure.storage.file.models import ContentSettings
@@ -291,7 +292,9 @@ class AzureRMStorageFile(AzureRMModuleBase):
                     if not self.dir_obj:
                         self.file_obj = self.get_file()
                     if self.file_obj:
-                        self.fail("Cannot create directory {0}. File with that name already exists.".format(self.file))
+                        # juste return file info
+                        None
+                        #self.fail("Cannot create directory {0}. File with that name already exists.".format(self.file))
                     elif not self.dir_obj:
                         self.create_directory()
 
@@ -341,6 +344,8 @@ class AzureRMStorageFile(AzureRMModuleBase):
 
         # until we sort out how we want to do this globally
         del self.results['actions']
+        if not self.results['file'] and self.file_obj:
+            self.results['file'] = self.file_obj
         return self.results
 
 
@@ -403,17 +408,30 @@ class AzureRMStorageFile(AzureRMModuleBase):
             )
         return result
 
+    def calculate_md5(self):
+        if self.template:
+            return hashlib.md5(self.template.encode('utf-8')).hexdigest()
+
+        with open(self.src) as file_to_check:
+            data = file_to_check.read()
+        return hashlib.md5(data.encode('utf-8')).hexdigest()
+
     def upload_file(self, as_text=False):
         content_settings = None
+        md5_returned = self.calculate_md5()
+        md5_originale = None
+        if self.file_obj:
+            md5_originale = self.file_obj['content_settings']['content_md5']
+
         if self.content_type or self.content_encoding or self.content_language or self.content_disposition or \
-                self.cache_control or self.content_md5:
+                self.cache_control or md5_returned:
             content_settings = ContentSettings(
                 content_type=self.content_type,
                 content_encoding=self.content_encoding,
                 content_language=self.content_language,
                 content_disposition=self.content_disposition,
                 cache_control=self.cache_control,
-                content_md5=self.content_md5
+                content_md5=md5_returned
             )
         if not self.check_mode:
             try:
@@ -431,7 +449,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
                 self.fail("Error creating file {0} - {1}".format(self.file, str(exc)))
 
         self.file_obj = self.get_file()
-        self.results['changed'] = True
+        self.results['changed'] = md5_originale != md5_returned
         self.results['actions'].append('created file {0} from {1}'.format(self.file, self.src))
         self.results['file'] = self.file_obj
 
