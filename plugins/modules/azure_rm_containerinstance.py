@@ -473,6 +473,7 @@ state:
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBaseEx, AzureRMTerminal
 from ansible.module_utils.common.dict_transformations import _snake_to_camel
 from ansible.module_utils._text import to_native
+import datetime
 
 try:
     from msrestazure.azure_exceptions import CloudError
@@ -778,6 +779,8 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                     return self.results
                 response = self.create_update_containerinstance(new_container)
 
+            if not isinstance(response, dict):
+                response = response.as_dict()
             self.results['id'] = response['id']
             self.results['provisioning_state'] = response['provisioning_state']
             self.results['ip_address'] = response['ip_address']['ip'] if 'ip_address' in response else ''
@@ -816,7 +819,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             terminal.execute(self.terminal['lines'])
             self.results['console'] = terminal.console
 
-        except CloudError as exc:
+        except (CloudError, HttpResponseError) as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
         finally:
             if terminal is not None:
@@ -826,20 +829,18 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         self.log("Restart the container instance {0}".format(self.name))
         try:
             state_name = 'restart'
-            if response['instance_view']['state'] == 'Running':
+            if response.instance_view.state == 'Running':
                 poller = self.containerinstance_client.container_groups.begin_restart(resource_group_name=self.resource_group, container_group_name=self.name)
             else:
                 state_name = 'start'
                 poller = self.containerinstance_client.container_groups.begin_start(resource_group_name=self.resource_group, container_group_name=self.name)
             if self.restart_wait is not None:
                 poller.wait(self.restart_wait)
-                #response = self.get_poller_result(poller, self.restart_wait)
-                #self.results['state']['result'] = poller.result()
                 if not poller.done():
                     return 'time-out'
             self.results['state'][state_name] = poller.status()
             return poller.status()
-        except CloudError as exc:
+        except (CloudError, HttpResponseError) as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
 
     def new_containerinstance(self):
@@ -987,15 +988,49 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         self.log("Creating / Updating the container instance {0}".format(self.name))
 
         try:
-            response = self.containerinstance_client.container_groups.begin_create_or_update(resource_group_name=self.resource_group,
-                                                                                            container_group_name=self.name,
-                                                                                            container_group=parameters)
-            if isinstance(response, LROPoller):
-                response = self.get_poller_result(response)
-        except HttpResponseError as exc:
+
+            retry = 0
+
+            while True:
+                #2021-12-12T17:19:53+00:00
+                now = datetime.datetime.utcnow()
+                #now = now.strftime('%Y-%m-%dT%H:%M:%S+00:00')
+                now = int(now.strftime('%Y%m%d%H%M%S'))
+
+                response = self.containerinstance_client.container_groups.begin_create_or_update(resource_group_name=self.resource_group,
+                                                                                                container_group_name=self.name,
+                                                                                                container_group=parameters)
+                if isinstance(response, LROPoller):
+                    while not response.done():
+                        response.wait(15)
+                        container = self.get_containerinstance()
+                        if container:
+                            refs = [x for x in container.instance_view.events if self.is_doa_event(now, x)]
+                            if len(refs) > 0:
+                                self.containerinstance_client.container_groups.stop(resource_group_name=self.resource_group, container_group_name=self.name)
+                                retry += 1
+                                if retry == 3:
+                                    ref = refs[len(refs) - 1] # if len(refs) > 0 else None
+                                    self.fail("Error when creating ACI {0}: {1}-{2}".format(self.name, ref.name, ref.message))
+                                break  # while not response.done()
+                    if response.done():
+                        response = response.result()
+                        return response.as_dict()
+        except (CloudError, HttpResponseError) as exc:
             self.fail("Error when creating ACI {0}: {1}".format(self.name, exc.message or str(exc)))
 
-        return response.as_dict()
+        return None
+
+    def is_doa_event(self, timeRef, event):
+        if event.type == "Normal":
+            return False
+        if event.message and "timeout" in event.message.lower():
+            return False
+        last_timestamp = int(event.last_timestamp.strftime('%Y%m%d%H%M%S'))
+        self.log("Test event: {0} < {1} == {2}".format(timeRef, last_timestamp, timeRef < last_timestamp))
+        if timeRef < last_timestamp:
+            return True
+        return False
 
     def delete_containerinstance(self):
         '''
@@ -1007,7 +1042,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         try:
             response = self.containerinstance_client.container_groups.begin_delete(resource_group_name=self.resource_group, container_group_name=self.name)
             return True
-        except HttpResponseError as exc:
+        except (CloudError, HttpResponseError) as exc:
             self.fail('Error when deleting ACI {0}: {1}'.format(self.name, exc.message or str(exc)))
             return False
 
@@ -1075,7 +1110,6 @@ def default_compare(new, old, path):
         return True
     else:
         return new == old
-
 
 def main():
     """Main execution"""
