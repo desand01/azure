@@ -645,6 +645,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
             self.log("Application Gateway instance doesn't exist")
             if self.state == 'absent':
                 self.log("Old instance didn't exist")
+            else:
+                self.fail("Application Gateway instance '{0}@{1}' doesn't exist".format(self.name, self.resource_group))
         else:
             self.log("Application Gateway instance already exists")
             if self.state == 'absent':
