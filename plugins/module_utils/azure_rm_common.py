@@ -1727,7 +1727,7 @@ class AzureRMModuleBaseEx(AzureRMModuleBase):
 
         return self._containerinstance_client
 
-    
+
     def get_mgmt_svc_client(self, client_type, base_url=None, api_version=None, suppress_subscription_id=False):
         self.log('Getting management service client ex {0}'.format(client_type.__name__))
         if self._retrocompatibility:
@@ -1811,8 +1811,8 @@ class AzureRMTerminal(object):
     def __init__(self, containerExecResponse, args):
         self._exec_info['uri'] = containerExecResponse.web_socket_uri
         self._exec_info['password'] = containerExecResponse.password
-        self._wait_regex = re.compile(args['wait_regex'] or '[#$:] $')
-        self._wait_timeout = args['wait_timeout'] or 120
+        self._wait_regex = re.compile(args['wait_regex'] or '[#$:>] $')
+        self._wait_timeout = 120 if args['wait_timeout'] is None else args['wait_timeout']
         self._fail_on_timeout = True if args['fail_on_timeout'] is None else args['fail_on_timeout']
         import _thread
         _thread.start_new_thread(self._ws_thread, ())
