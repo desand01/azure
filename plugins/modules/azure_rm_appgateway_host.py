@@ -542,6 +542,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                     ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
+                        if 'port' in item and type(item['port']) != int:
+                            item['port'] = int(item['port'])
                         if 'protocol' in item:
                             item['protocol'] = _snake_to_camel(item['protocol'], True)
                         if 'cookie_based_affinity' in item:
@@ -564,13 +566,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                             #                                  item['frontend_ip_configuration'])
                             #item['frontend_ip_configuration'] = {'id': id}
                             None
-                        if 'frontend_port' in item:
-                            #id = frontend_port_id(self.subscription_id,
-                            #                      kwargs['resource_group'],
-                            #                      kwargs['name'],
-                            #                      item['frontend_port'])
-                            #item['frontend_port'] = {'id': id}
-                            None
+                        if 'frontend_port' in item and type(item['frontend_port']) != int:
+                            item['frontend_port'] = int(item['frontend_port'])
                         if 'ssl_certificate' in item:
                             id = ssl_certificate_id(self.subscription_id,
                                                     kwargs['resource_group'],
