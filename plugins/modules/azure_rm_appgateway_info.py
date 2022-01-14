@@ -52,9 +52,8 @@ id:
     sample: id
 '''
 
-import time
+import re
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
-from copy import deepcopy
 from ansible.module_utils.common.dict_transformations import (
     camel_dict_to_snake_dict, snake_dict_to_camel_dict,
     _camel_to_snake, _snake_to_camel, dict_merge,
@@ -115,13 +114,11 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         self.mgmt_client = self.get_mgmt_svc_client(NetworkManagementClient,
                                                     base_url=self._cloud_environment.endpoints.resource_manager)
 
-        old_response = self.get_applicationgateway()
-    
-        self.log("Application Gateway instance unchanged")
         self.results['changed'] = False
-        response = old_response
+        response = self.get_applicationgateway()
         self.results["gateway"] = {}
-        self.results["private_ip_address"] = self.getPrivateIp(response)
+        self.results["private_ip_address"] = self.get_private_ip(response)
+        self.results["public_ip_address"] = self.get_public_ip(response)
         if response:
             response['backend_address_pools'] = len(response['backend_address_pools'])
             response['trusted_root_certificates'] = len(response['trusted_root_certificates'])
@@ -138,12 +135,31 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
 
         return self.results
 
-    def getPrivateIp(self, response):
+    def get_private_ip(self, response):
+        self.log('Get private ip for {0}'.format(self.name))
         if response:
             frontend_ip_configurations = response['frontend_ip_configurations']
             for item in frontend_ip_configurations:
                 if 'private_ip_address' in item:
                     return item['private_ip_address']
+        return '0.0.0.0'
+
+    def get_public_ip(self, response):
+        self.log('Get public ip for {0}'.format(self.name))
+        if response:
+            id = None
+            frontend_ip_configurations = response['frontend_ip_configurations']
+            for item in frontend_ip_configurations:
+                if 'public_ip_address' in item:
+                    if 'id' in item['public_ip_address']:
+                        id = re.search(r'[^/]+$', item['public_ip_address']['id']).group()
+                    break
+            try:
+                if id:
+                    item = self.network_client.public_ip_addresses.get(self.resource_group, id)
+                    return item.ip_address
+            except CloudError:
+                pass
         return '0.0.0.0'
 
     def get_applicationgateway(self):
