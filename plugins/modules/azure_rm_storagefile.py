@@ -412,9 +412,9 @@ class AzureRMStorageFile(AzureRMModuleBase):
         if self.template:
             return hashlib.md5(self.template.encode('utf-8')).hexdigest()
 
-        with open(self.src) as file_to_check:
+        with open(self.src, "rb") as file_to_check:
             data = file_to_check.read()
-        return hashlib.md5(data.encode('utf-8')).hexdigest()
+        return hashlib.md5(data).hexdigest()
 
     def upload_file(self, as_text=False):
         content_settings = None
@@ -437,9 +437,8 @@ class AzureRMStorageFile(AzureRMModuleBase):
             try:
                 self._create_directory()
                 if as_text:
-                    content_encoding = self.content_encoding or 'utf-8'
                     self.file_client.create_file_from_text(self.share_name, self.directory_path, self.file_name,
-                                                           self.template, content_encoding,
+                                                           self.template, self.content_encoding,
                                                            content_settings=content_settings, metadata=self.tags)
                 else:
                     self.file_client.create_file_from_path(self.share_name, self.directory_path, self.file_name,
