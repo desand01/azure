@@ -437,8 +437,9 @@ class AzureRMStorageFile(AzureRMModuleBase):
             try:
                 self._create_directory()
                 if as_text:
+                    content_encoding = self.content_encoding or 'utf-8'
                     self.file_client.create_file_from_text(self.share_name, self.directory_path, self.file_name,
-                                                           self.template, self.content_encoding,
+                                                           self.template, content_encoding,
                                                            content_settings=content_settings, metadata=self.tags)
                 else:
                     self.file_client.create_file_from_path(self.share_name, self.directory_path, self.file_name,
