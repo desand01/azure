@@ -653,26 +653,26 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 self.to_do = Actions.Update
 
 
-        if (self.to_do == Actions.Update):
-
-            object_assign_original_port(self.parameters, old_response)
+        if (self.to_do == Actions.Update) or (self.to_do == Actions.Delete):
+            if (self.to_do == Actions.Update):
+                object_assign_original_port(self.parameters, old_response)
             self.dict_assign_appgateway(self.parameters, old_response)
             #section host
-            object_assign_original(old_response, self.parameters, 'backend_address_pools')
-            object_assign_original(old_response, self.parameters, 'backend_http_settings_collection')
-            object_assign_original(old_response, self.parameters, 'http_listeners')
-            object_assign_original(old_response, self.parameters, 'request_routing_rules')
+            object_assign_original(old_response, self.parameters, 'backend_address_pools', self.to_do)
+            object_assign_original(old_response, self.parameters, 'backend_http_settings_collection', self.to_do)
+            object_assign_original(old_response, self.parameters, 'http_listeners', self.to_do)
+            object_assign_original(old_response, self.parameters, 'request_routing_rules', self.to_do)
             
             if (not compare_arrays(old_response, self.parameters, 'backend_address_pools') or
             not compare_arrays(old_response, self.parameters, 'probes') or
             not compare_arrays(old_response, self.parameters, 'backend_http_settings_collection') or
             not compare_arrays(old_response, self.parameters, 'request_routing_rules') or
             not compare_arrays(old_response, self.parameters, 'http_listeners')):
-                self.to_do = Actions.Update
+                pass
             else:
                 self.to_do = Actions.NoAction
 
-        if (self.to_do == Actions.Create) or (self.to_do == Actions.Update):
+        if (self.to_do == Actions.Create) or (self.to_do == Actions.Update) or (self.to_do == Actions.Delete):
             self.log("Need to Create / Update the Application Gateway instance")
 
             if self.check_mode:
@@ -687,8 +687,6 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
             else:
                 self.results['changed'] = old_response.__ne__(response)
             self.log("Creation / Update done")
-        elif self.to_do == Actions.Delete:
-            self.fail("Error creating the Application Gateway host delete not done")
         else:
             self.log("Application Gateway instance unchanged")
             self.results['changed'] = False
@@ -908,7 +906,7 @@ def object_assign_original_port(new_params, old_params): #
     
 
 
-def object_assign_original(old_params, new_params, param_name, index_name = 'name'):
+def object_assign_original(old_params, new_params, param_name, to_do = Actions.Update, index_name = 'name'):
     old = old_params.get(param_name) or []
     new = new_params.get(param_name) or []
     newArray = []
@@ -918,10 +916,11 @@ def object_assign_original(old_params, new_params, param_name, index_name = 'nam
     for item in old:
         if not item[index_name] in newvalues:
             newArray.append(item)
-        else:
+        elif to_do != Actions.Delete:
             newArray.append(newvalues.pop(item[index_name]))
-    for key in newvalues:
-        newArray.append(newvalues[key])
+    if to_do != Actions.Delete:
+        for key in newvalues:
+            newArray.append(newvalues[key])
     new_params[param_name] = newArray
 
 def main():
