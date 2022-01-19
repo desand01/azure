@@ -663,11 +663,11 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
             object_assign_original(old_response, self.parameters, 'http_listeners', self.to_do)
             object_assign_original(old_response, self.parameters, 'request_routing_rules', self.to_do)
             
-            if (not compare_arrays(old_response, self.parameters, 'backend_address_pools') or
-            not compare_arrays(old_response, self.parameters, 'probes') or
-            not compare_arrays(old_response, self.parameters, 'backend_http_settings_collection') or
-            not compare_arrays(old_response, self.parameters, 'request_routing_rules') or
-            not compare_arrays(old_response, self.parameters, 'http_listeners')):
+            if (not compare_arrays(old_response, self.parameters, 'backend_address_pools', self.to_do) or
+            not compare_arrays(old_response, self.parameters, 'probes', self.to_do) or
+            not compare_arrays(old_response, self.parameters, 'backend_http_settings_collection', self.to_do) or
+            not compare_arrays(old_response, self.parameters, 'request_routing_rules', self.to_do) or
+            not compare_arrays(old_response, self.parameters, 'http_listeners', self.to_do)):
                 pass
             else:
                 self.to_do = Actions.NoAction
@@ -870,14 +870,15 @@ def subnet_id(subscription_id, resource_group_name, virtual_network_name, name):
     )
 
 
-def compare_arrays(old_params, new_params, param_name):
+def compare_arrays(old_params, new_params, param_name, to_do = Actions.Update):
     old = old_params.get(param_name) or []
     new = new_params.get(param_name) or []
 
     oldd = array_to_dict(old)
     newd = array_to_dict(new)
 
-    newd = dict_merge(oldd, newd)
+    if to_do != Actions.Delete:
+        newd = dict_merge(oldd, newd)
     return newd == oldd
 
 
