@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-# Copyright (c) 2017 Zim Kalinowski, <zikalino@microsoft.com>
+# Copyright (c) 2021 Ross Bender (@l3ender)
 #
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
@@ -11,129 +11,192 @@ __metaclass__ = type
 DOCUMENTATION = '''
 ---
 module: azure_rm_appgateway_info
-version_added: "0.1.2"
-short_description: Manage Application Gateway instance
+version_added: "1.10.0"
+short_description: Retrieve Application Gateway instance facts
 description:
-    - Create, update and delete instance of Application Gateway.
-
+    - Get facts for a Application Gateway instance.
 options:
-    resource_group:
-        description:
-            - The name of the resource group.
-        required: True
     name:
         description:
-            - The name of the application gateway.
-        required: True
+            - Only show results for a specific application gateway.
+        type: str
+    resource_group:
+        description:
+            - Limit results by resource group.
+        type: str
 
 extends_documentation_fragment:
     - azure.azcollection.azure
-    - azure.azcollection.azure_tags
 
 author:
-    - Zim Kalinowski (@zikalino)
-
+    - Ross Bender (@l3ender)
 '''
 
 EXAMPLES = '''
-- name: Get info instance of Application Gateway
-  azure_rm_appgateway_info:
-    resource_group: myResourceGroup
-    name: myAppGateway
-    
+    - name: Get facts for application gateway by name.
+      azure_rm_appgateway_info:
+        name: MyAppgw
+        resource_group: MyResourceGroup
+
+    - name: Get facts for application gateways in resource group.
+      azure_rm_appgateway_info:
+        resource_group: MyResourceGroup
+
+    - name: Get facts for all application gateways.
+      azure_rm_appgateway_info:
 '''
 
 RETURN = '''
-id:
+gateways:
     description:
-        - Resource ID.
+        - A list of dictionaries containing facts for an application gateway.
     returned: always
-    type: str
-    sample: id
+    type: complex
+    contains:
+        id:
+            description:
+                - Application gateway resource ID.
+            returned: always
+            type: str
+            sample: /subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/myResourceGroup/providers/Microsoft.Network/applicationGateways/myAppGw
+        name:
+            description:
+                - Name of application gateway.
+            returned: always
+            type: str
+            sample: myAppGw
+        resource_group:
+            description:
+                - Name of resource group.
+            returned: always
+            type: str
+            sample: myResourceGroup
+        location:
+            description:
+                - Location of application gateway.
+            returned: always
+            type: str
+            sample: centralus
+        operational_state:
+            description:
+                - Operating state of application gateway.
+            returned: always
+            type: str
+            sample: Running
+        provisioning_state:
+            description:
+                - Provisioning state of application gateway.
+            returned: always
+            type: str
+            sample: Succeeded
 '''
 
-import re
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
-from ansible.module_utils.common.dict_transformations import (
-    camel_dict_to_snake_dict, snake_dict_to_camel_dict,
-    _camel_to_snake, _snake_to_camel, dict_merge,
-)
 
 try:
     from msrestazure.azure_exceptions import CloudError
-    from msrest.polling import LROPoller
     from azure.mgmt.network import NetworkManagementClient
-    from msrest.serialization import Model
+    from msrestazure.tools import parse_resource_id
 except ImportError:
     # This is handled in azure_rm_common
     pass
 
 
-class Actions:
-    NoAction, Create, Update, Delete = range(4)
-
-
-
-class AzureRMApplicationGateways(AzureRMModuleBase):
-    """Configuration class for an Azure RM Application Gateway resource"""
+class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
 
     def __init__(self):
+
         self.module_arg_spec = dict(
-            resource_group=dict(
-                type='str',
-                required=True
-            ),
-            name=dict(
-                type='str',
-                required=True
-            ),
+            name=dict(type='str'),
+            resource_group=dict(type='str'),
         )
 
-        self.resource_group = None
+        self.results = dict(
+            changed=False,
+        )
+
         self.name = None
-        self.parameters = dict()
-
-        self.results = dict(changed=False)
+        self.resource_group = None
         self.mgmt_client = None
-        self.to_do = Actions.NoAction
 
-        super(AzureRMApplicationGateways, self).__init__(derived_arg_spec=self.module_arg_spec,
-                                                         supports_check_mode=True,
-                                                         supports_tags=True)
+        super(AzureRMApplicationGatewayInfo, self).__init__(self.module_arg_spec,
+                                                            supports_check_mode=True,
+                                                            supports_tags=False,
+                                                            facts_module=True)
 
     def exec_module(self, **kwargs):
-        """Main module execution method"""
-
-        for key in list(self.module_arg_spec.keys()):
-            if hasattr(self, key):
-                setattr(self, key, kwargs[key])
-
-        old_response = None
-        response = None
+        for key in self.module_arg_spec:
+            setattr(self, key, kwargs[key])
 
         self.mgmt_client = self.get_mgmt_svc_client(NetworkManagementClient,
                                                     base_url=self._cloud_environment.endpoints.resource_manager)
 
-        self.results['changed'] = False
-        response = self.get_applicationgateway()
-        self.results["gateway"] = {}
-        self.results["private_ip_address"] = self.get_private_ip(response)
-        self.results["public_ip_address"] = self.get_public_ip(response)
-        if response:
-            response['backend_address_pools'] = len(response['backend_address_pools'])
-            response['trusted_root_certificates'] = len(response['trusted_root_certificates'])
-            response['ssl_certificates'] = len(response['ssl_certificates'])
-            response['probes'] = len(response['probes'])
-            response['backend_http_settings_collection'] = len(response['backend_http_settings_collection'])
-            response['http_listeners'] = len(response['http_listeners'])
-            response['url_path_maps'] = len(response['url_path_maps'])
-            response['request_routing_rules'] = len(response['request_routing_rules'])
-            response['rewrite_rule_sets'] = len(response['rewrite_rule_sets'])
-            response['redirect_configurations'] = len(response['redirect_configurations'])
-            response['custom_error_configurations'] = len(response['custom_error_configurations'])
-            self.results["gateway"] = response
+        if self.name is not None:
+            self.results["gateways"] = self.get()
+        elif self.resource_group is not None:
+            self.results["gateways"] = self.list_by_rg()
+        else:
+            self.results["gateways"] = self.list_all()
 
         return self.results
+
+    def get(self):
+        response = None
+        results = []
+        try:
+            response = self.mgmt_client.application_gateways.get(resource_group_name=self.resource_group, application_gateway_name=self.name)
+        except CloudError:
+            pass
+
+        if response is not None:
+            results.append(self.format_response(response))
+
+        return results
+
+    def list_by_rg(self):
+        response = None
+        results = []
+        try:
+            response = self.mgmt_client.application_gateways.list(resource_group_name=self.resource_group)
+
+        except CloudError as exc:
+            request_id = exc.request_id if exc.request_id else ''
+            self.fail("Error listing application gateways in resource groups {0}: {1} - {2}".format(self.resource_group, request_id, str(exc)))
+
+        for item in response:
+            results.append(self.format_response(item))
+
+        return results
+
+    def list_all(self):
+        response = None
+        results = []
+        try:
+            response = self.mgmt_client.application_gateways.list_all()
+        except CloudError as exc:
+            request_id = exc.request_id if exc.request_id else ''
+            self.fail("Error listing all application gateways: {0} - {1}".format(request_id, str(exc)))
+
+        for item in response:
+            results.append(self.format_response(item))
+
+        return results
+
+    def format_response(self, appgw):
+        d = appgw.as_dict()
+        id = d.get("id")
+        id_dict = parse_resource_id(id)
+        d = {
+            "id": id,
+            "name": d.get("name"),
+            "resource_group": id_dict.get('resource_group', self.resource_group),
+            "location": d.get("location"),
+            "operational_state": d.get("operational_state"),
+            "provisioning_state": d.get("provisioning_state"),
+            "private_ip_address": self.get_private_ip(appgw),
+            "public_ip_address": self.get_public_ip(appgw)
+        }
+        return d
 
     def get_private_ip(self, response):
         self.log('Get private ip for {0}'.format(self.name))
@@ -162,31 +225,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 pass
         return '0.0.0.0'
 
-    def get_applicationgateway(self):
-        '''
-        Gets the properties of the specified Application Gateway.
-
-        :return: deserialized Application Gateway instance state dictionary
-        '''
-        self.log("Checking if the Application Gateway instance {0} is present".format(self.name))
-        found = False
-        try:
-            response = self.mgmt_client.application_gateways.get(resource_group_name=self.resource_group,
-                                                                 application_gateway_name=self.name)
-            found = True
-            self.log("Response : {0}".format(response))
-            self.log("Application Gateway instance : {0} found".format(response.name))
-        except CloudError as e:
-            self.log('Did not find the Application Gateway instance.')
-        if found is True:
-            return response.as_dict()
-
-        return False
-
-
 def main():
-    """Main execution"""
-    AzureRMApplicationGateways()
+    AzureRMApplicationGatewayInfo()
 
 
 if __name__ == '__main__':

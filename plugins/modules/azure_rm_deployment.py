@@ -528,6 +528,22 @@ class AzureRMDeploymentManager(AzureRMModuleBase):
             )
 
         try:
+            # fetch the RG directly (instead of using the base helper) since we don't want to exit if it's missing
+            rg = self.rm_client.resource_groups.get(self.resource_group)
+            if rg.tags:
+                update_tags, self.tags = self.update_tags(rg.tags)
+        except CloudError:
+            # resource group does not exist
+            pass
+
+        params = self.rm_models.ResourceGroup(location=self.location, tags=self.tags)
+
+        try:
+            self.rm_client.resource_groups.create_or_update(self.resource_group, params)
+        except CloudError as exc:
+            self.fail("Resource group create_or_update failed with status code: %s and message: %s" %
+                      (exc.status_code, exc.message))
+        try:
             result = self.rm_client.deployments.create_or_update(self.resource_group,
                                                                  self.name,
                                                                  deploy_parameter)
