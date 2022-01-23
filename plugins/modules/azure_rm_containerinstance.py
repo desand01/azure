@@ -5,6 +5,7 @@
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
+from typing import Protocol
 __metaclass__ = type
 
 
@@ -69,7 +70,7 @@ options:
     ports:
         description:
             - List of ports exposed within the container group.
-            - This option is deprecated, using I(ports) under I(containers)".
+            - This option is deprecated, using I(ports) under I(containers).
         type: list
         elements: int
     location:
@@ -551,7 +552,7 @@ container_spec = dict(
     image=dict(type='str', required=True),
     memory=dict(type='float', default=1.5),
     cpu=dict(type='float', default=1),
-    ports=dict(type='list', elements='dict', options=port_spec),
+    ports=dict(type='list'), #), elements='dict', options=port_spec),
     commands=dict(type='list', elements='str'),
     environment_variables=dict(type='list', elements='dict', options=env_var_spec),
     volume_mounts=dict(type='list', elements='dict', options=volume_mount_var_spec)
@@ -611,7 +612,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             os_type=dict(
                 type='str',
                 default='Linux',
-                choices=['Linux', 'Windows']
+                choices=['Linux','linux', 'Windows','windows']
             ),
             state=dict(
                 type='str',
@@ -624,7 +625,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             ip_address=dict(
                 type='str',
                 default='none',
-                choices=['Public', 'Private' ,'none']
+                choices=['Public','public', 'Private', 'private' ,'none']
             ),
             subnets=dict(
                 type='list',
@@ -637,8 +638,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             ),
             ports=dict(
                 type='list',
-                elements='dict',
-                options=port_spec,
+                elements='int',
                 default=[],
             ),
             registry_login_server=dict(
@@ -720,7 +720,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
 
         resource_group = None
         response = None
-
+        self.normalize_group_container_def()
         # since this client hasn't been upgraded to expose models directly off the OperationClass, fish them out
         self.cgmodels = self.containerinstance_client.container_groups.models
 
@@ -843,6 +843,35 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         except (CloudError, HttpResponseError) as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
 
+    def normalize_group_container_def(self):
+        if len(self.ports) > 0:
+            self.module.deprecate("The option 'ports' is deprecated, use 'ports' under I(containers)")
+
+        cap = _snake_to_camel(self.os_type, True)
+        if self.os_type != cap:
+            self.module.deprecate("The option container.os_type '{0}' has been renamed to '{1}'".format(self.os_type, cap))
+            self.os_type = cap
+        cap = _snake_to_camel(self.ip_address, True)
+        if self.ip_address != cap:
+            self.module.deprecate("The option container.ip_address '{0}' has been renamed to '{1}'".format(self.os_type, cap))
+            self.ip_address = cap
+
+
+    def normalize_container_def(self, container):
+        #if container_def:
+        if 'ports' in container:
+            new_ports = []
+            for port in container['ports']:
+                if isinstance(port, dict):
+                    new_ports.append(port)
+                #self.module.warn("Implicit conversion of param port {0} for container {1} to dict(protocol='TPC',port='{0}')".format(port, container['name']))
+                self.module.deprecate("Implicit conversion of param port '{0}' for container {1} to dict(protocol='TPC',port='{0}')".format(port, container['name']))
+                new_ports.append(dict(
+                    protocol='TCP',
+                    port=port
+                ))
+            container['ports'] = new_ports
+
     def new_containerinstance(self):
         '''
         Creates a container service model with the specified configuration of orchestrator, masters, and agents.
@@ -863,6 +892,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         containers = []
         all_ports = dict()
         for container_def in self.containers:
+            self.normalize_container_def(container_def)
             name = container_def.get("name")
             image = container_def.get("image")
             memory = container_def.get("memory")
@@ -871,6 +901,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             ports = []
             variables = []
             volume_mounts = []
+            subnets = None
 
             port_list = container_def.get("ports")
             if port_list:
