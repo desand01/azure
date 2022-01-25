@@ -326,21 +326,21 @@ class AzureRMStorageFile(AzureRMModuleBase):
                 self.file_obj = self.get_file()
                 if self.file_obj:
                     # Delete file
-                    self.delete_file()
+                    self.delete_file(self.directory_path, self.file_name)
                 else:
                     self.dir_obj = self.get_directory()
                     if self.dir_obj and self.force:
-                        self.delete_directory()
+                        self.delete_directory(self.file)
                     elif not self.directory_has_files():
-                        self.delete_directory()
+                        self.delete_directory(self.file)
                     else:
-                        self.fail("Failed to delete directory {0}:{1}. It contains files. Use the force option.".format(self.share_name, self.file))
+                        self.log("Failed to delete directory {0}:{1}. It contains files. Use the force option.".format(self.share_name, self.file))
             elif self.force:
                 self.delete_share()
             elif not self.share_has_files():
                 self.delete_share()
             else:
-                self.fail("Failed to delete share {0}. It contains files. Use the force option.".format(self.share_name))
+                self.log("Failed to delete share {0}. It contains files. Use the force option.".format(self.share_name))
 
         # until we sort out how we want to do this globally
         del self.results['actions']
@@ -455,7 +455,11 @@ class AzureRMStorageFile(AzureRMModuleBase):
 
     def create_directory(self):
         self._create_directory()
-        self.file_client.create_directory(self.share_name, self.file)
+        self.file_client.create_directory(self.share_name, self.file, self.tags)
+        self.dir_obj = self.get_directory()
+        self.results['changed'] = True
+        self.results['actions'].append("created directory {0}:{1} tags.".format(self.share_name, self.file))
+        self.results['directory'] = self.dir_obj
 
     def _create_directory(self):
         path = ''
@@ -550,16 +554,32 @@ class AzureRMStorageFile(AzureRMModuleBase):
             return True
         return False
 
-    def delete_file(self):
+    def delete_file(self, directory_path, file_name):
         if not self.check_mode:
             try:
                 #share_name, directory_name, file_name, timeout=None)
-                self.file_client.delete_file(self.share_name, self.directory_path, self.file_name)
+                self.file_client.delete_file(self.share_name, directory_path, file_name)
             except AzureHttpError as exc:
-                self.fail("Error deleting file {0}:{1} - {2}".format(self.share_name, self.file, str(exc)))
+                self.fail("Error deleting file {0}:{1} - {2}".format(self.share_name, directory_path + '/' + file_name, str(exc)))
 
         self.results['changed'] = True
-        self.results['actions'].append('deleted file {0}:{1}'.format(self.share_name, self.file))
+        self.results['actions'].append('deleted file {0}:{1}'.format(self.share_name, directory_path + '/' + file_name))
+
+    def delete_directory(self, file):
+        if not self.check_mode:
+            try:
+                list_generator = self.file_client.list_directories_and_files(self.share_name, file)
+                for item in list_generator:
+                    if item.__class__.__name__ == 'Directory':
+                        self.delete_directory(file + '/' + item.name)
+                    else:
+                        self.delete_file(file, item.name)
+                self.file_client.delete_directory(self.share_name, file)
+            except AzureHttpError as exc:
+                self.fail("Error deleting directory {0}:{1} - {2}".format(self.share_name, file, str(exc)))
+
+        self.results['changed'] = True
+        self.results['actions'].append('deleted directory {0}:{1}'.format(self.share_name, file))
 
     def update_file_tags(self, tags):
         if not self.check_mode:

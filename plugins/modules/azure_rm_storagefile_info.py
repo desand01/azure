@@ -132,6 +132,7 @@ class AzureRMStorageFile(AzureRMModuleBase):
         self.file_name = None
         self.directory_path = None
         self.file_obj = None
+        self.file_dir = None
         self.resource_group = None
         self.results = dict(
             changed=False,
@@ -167,13 +168,18 @@ class AzureRMStorageFile(AzureRMModuleBase):
         if not self.share_obj:
             self.fail("Share file {0} does not exists".format(self.share_name))
         self.file_obj = self.get_file()
+        if not self.file_obj:
+            self.file_dir = self.get_directory()
         
 
         # until we sort out how we want to do this globally
         del self.results['actions']
-        if self.file_obj:
-            self.results['exists'] = True    
-        self.results['file'] = self.file_obj
+        if self.file_obj or self.file_dir:
+            self.results['exists'] = True
+        if self.file_dir:
+            self.results['directory'] = self.file_dir
+        else:
+            self.results['file'] = self.file_obj
         return self.results
 
 

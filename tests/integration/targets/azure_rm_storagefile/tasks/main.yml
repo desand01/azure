@@ -1,0 +1,269 @@
+- name: Create storage account name
+  set_fact:
+      storage_account: "sb{{ resource_group | hash('md5') | truncate(22, True, '') }}"
+
+- name: Create storage account
+  azure_rm_storageaccount:
+    resource_group: "{{ resource_group }}" 
+    name: "{{ storage_account }}"
+    account_type: Standard_LRS
+
+- name: Create file-share
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}"
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+
+- name: Force upload file
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'Ratings.png'
+    src: './targets/azure_rm_storagefile/files/Ratings.png'
+    content_type: image/png
+    tags:
+        val1: foo
+        val2: bar
+    force: yes 
+
+- name: Upload file idempotence
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'Ratings.png'
+    src: './targets/azure_rm_storagefile/files/Ratings.png'
+    content_type: image/png
+    tags:
+        val1: foo
+        val2: bar
+  register: upload_facts
+
+- assert:
+      that: "not upload_facts.changed"
+
+- name: Download file idempotence 
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'Ratings.png'
+    dest: './targets/azure_rm_storagefile/files/Ratings.png'
+  register: download_results
+
+- assert: 
+      that: not download_results.changed
+
+- file: path="/tmp/Ratings.png" state=absent
+
+- name: Download file 
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'Ratings.png'
+    dest: '/tmp/Ratings.png'
+  register: download_results
+
+- assert: 
+      that: "download_results.changed"
+
+- find: paths='/tmp' patterns="Ratings.png"
+  register: find_results
+
+- assert: { that: "find_results['matched'] == 1" }
+
+- name: Get fact file 
+  azure_rm_storagefile_info:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'Ratings.png'
+  register: file_info_results
+
+- name: Assert file attributs
+  assert:
+    that:
+      - file_info_results.exists
+      - file.name == 'Ratings.png'
+      - file.content_length == 35164
+      - file.tags.val1 == 'foo'
+      - file.tags.val2 == 'bar'
+  vars:
+    file: "{{ file_info_results.file }}"
+
+- name: Get fact file not exists
+  azure_rm_storagefile_info:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'missing.txt'
+  register: file_info_results
+
+- name: Assert missing file
+  assert:
+    that:
+      - not file_info_results.exists
+  vars:
+    file: "{{ file_info_results.file }}"
+
+- name: Create empty folder
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'folder1'
+    tags:
+        val1: foo
+        val2: bar
+  register: download_results
+
+- assert:
+    that: "download_results.changed"
+
+- name: Get fact folder 
+  azure_rm_storagefile_info:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'folder1'
+  register: file_info_results
+
+- name: Assert folder attributs
+  assert:
+    that:
+      - file_info_results.exists
+      - directory.name == 'folder1'
+      - directory.tags.val1 == 'foo'
+      - directory.tags.val2 == 'bar'
+  vars:
+    directory: "{{ file_info_results.directory }}"
+
+- name: Create sub folders tree
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'folder1/sub1/sub2/sub3'
+  register: download_results
+
+- debug:
+    var: download_results
+
+- assert:
+    that: "download_results.changed"
+
+- name: Get fact sub folder 
+  azure_rm_storagefile_info:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'folder1/sub1/sub2/sub3'
+  register: file_info_results
+
+- name: Assert folder attributs
+  assert:
+    that:
+      - file_info_results.exists
+      - directory.name == 'folder1/sub1/sub2/sub3'
+  vars:
+    directory: "{{ file_info_results.directory }}"
+
+- name: Upload file with sub directory and rename
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'folder1/sub1/newsub/newname.png'
+    src: './targets/azure_rm_storagefile/files/Ratings.png'
+    content_type: image/png
+  register: upload_facts
+
+- assert:
+    that: "upload_facts.changed"
+
+- name: Get fact new file
+  azure_rm_storagefile_info:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files
+    file: 'folder1/sub1/newsub/newname.png'
+  register: file_info_results
+
+- debug:
+    var: file_info_results
+
+- name: Assert new file attributs
+  assert:
+    that:
+      - file_info_results.exists
+      - file.name == 'newname.png'
+      - file.content_length == 35164
+  vars:
+    file: "{{ file_info_results.file }}"
+
+- name: Do not delete directory that has files 
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}"
+    account_name: "{{ storage_account }}"
+    share_name: my-files 
+    file: 'folder1/sub1/newsub'
+    state: absent
+  register: output
+
+- assert:
+      that: "not output.changed"
+
+- name: Delete directory with files and sub directory - force
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}"
+    account_name: "{{ storage_account }}"
+    share_name: my-files 
+    file: 'folder1'
+    state: absent
+    force: yes
+  register: output
+
+- assert:
+      that: "output.changed"
+
+- name: Do not delete file-share that has files 
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}"
+    account_name: "{{ storage_account }}"
+    share_name: my-files 
+    state: absent
+  register: output
+
+- assert:
+      that: "not output.changed"
+
+- name: Delete file object
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}" 
+    account_name: "{{ storage_account }}"
+    share_name: my-files 
+    file: "Ratings.png"
+    state: absent
+  register: output
+
+- assert:
+      that: "output.changed"
+
+- name: Delete file-share 
+  azure_rm_storagefile:
+    resource_group: "{{ resource_group }}"
+    account_name: "{{ storage_account }}"
+    share_name: my-files 
+    state: absent
+  register: output
+
+- assert:
+    that: "output.changed"
+
+- name: Delete storage account
+  azure_rm_storageaccount:
+    resource_group: "{{ resource_group }}" 
+    name: "{{ storage_account }}"
+    state: absent 
