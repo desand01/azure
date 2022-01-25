@@ -132,12 +132,7 @@
       capacity: 2
     ssl_policy:
       policy_type: predefined
-      policy_name: ssl_policy20150501
-      disabled_ssl_protocols:
-        - tls_v1_0
-        - tls_v1_1
-      cipher_suites:
-        - tls_ecdhe_ecdsa_with_aes_256_gcm_sha384
+      policy_name: ssl_policy20170401
     authentication_certificates:
       - name: cert1
         data: "{{ lookup('file', cert1_file) }}"
@@ -290,12 +285,7 @@
       capacity: 2
     ssl_policy:
       policy_type: predefined
-      policy_name: ssl_policy20150501
-      disabled_ssl_protocols:
-        - tls_v1_0
-        - tls_v1_1
-      cipher_suites:
-        - tls_ecdhe_ecdsa_with_aes_256_gcm_sha384
+      policy_name: ssl_policy20170401
     authentication_certificates:
       - name: cert1
         data: "{{ lookup('file', cert1_file) }}"
@@ -376,12 +366,7 @@
       capacity: 2
     ssl_policy:
       policy_type: predefined
-      policy_name: ssl_policy20150501
-      disabled_ssl_protocols:
-        - tls_v1_0
-        - tls_v1_1
-      cipher_suites:
-        - tls_ecdhe_ecdsa_with_aes_256_gcm_sha384
+      policy_name: ssl_policy20170401
     authentication_certificates:
       - name: cert1
         data: "{{ lookup('file', cert1_file) }}"
@@ -452,6 +437,14 @@
     that:
       - output.changed
 
+- name: Create public ip
+  azure.azcollection.azure_rm_publicipaddress:
+    resource_group: "{{ resource_group }}"
+    name: "appgateway-subnet-lookup-public-ip"
+    allocation_method: Dynamic
+    sku: Basic
+  register: publicipaddress_output
+
 - name: Create instance of Application Gateway by looking up virtual network and subnet
   azure_rm_appgateway:
     resource_group: "{{ resource_group }}"
@@ -462,12 +455,7 @@
       capacity: 2
     ssl_policy:
       policy_type: predefined
-      policy_name: ssl_policy20150501
-      disabled_ssl_protocols:
-        - tls_v1_0
-        - tls_v1_1
-      cipher_suites:
-        - tls_ecdhe_ecdsa_with_aes_256_gcm_sha384
+      policy_name: ssl_policy20170401
     authentication_certificates:
       - name: cert1
         data: "{{ lookup('file', cert1_file) }}"
@@ -481,6 +469,8 @@
           virtual_network_name: vnet{{ rpfx }}
         name: app_gateway_ip_config
     frontend_ip_configurations:
+      - name: sample_public_ip_config
+        public_ip_address: "appgateway-subnet-lookup-public-ip"
       - subnet:
           name: subnet{{ rpfx }}
           virtual_network_name: vnet{{ rpfx }}
@@ -553,14 +543,18 @@
     name: "appgateway-subnet-lookup{{ rpfx }}"
     resource_group: "{{ resource_group }}"
   register: appgw_output
-- name: Assert there are the correct number of gateways
+- name: Assert gateway attributs
   assert:
     that:
       - appgw_output.gateways | community.general.json_query(query) | length == 1
-      - (appgw_output.gateways | community.general.json_query(query))[0].name == 'appgateway-subnet-lookup{{ rpfx }}'
-      - (appgw_output.gateways | community.general.json_query(query))[0].provisioning_state == 'Succeeded'
-      - (appgw_output.gateways | community.general.json_query(query))[0].operational_state == 'Running'
-
+      - gateway.name == 'appgateway-subnet-lookup{{ rpfx }}'
+      - gateway.provisioning_state == 'Succeeded'
+      - gateway.operational_state == 'Running'
+      - gateway.private_ip_address == '10.1.0.9'
+      - gateway.public_ip_address is regex("\d{1,3}\.\d{1,3}\.\d{1,3}")
+  vars:
+    gateway: "{{ appgw_output.gateways | first}}"
+        
 - name: Create instance of Application Gateway with probe using hostname from backend http settings
   azure_rm_appgateway:
     resource_group: "{{ resource_group_secondary }}"
@@ -571,11 +565,7 @@
       capacity: 2
     ssl_policy:
       policy_type: predefined
-      policy_name: ssl_policy20150501
-      disabled_ssl_protocols:
-        - tls_v1_0
-      cipher_suites:
-        - tls_ecdhe_ecdsa_with_aes_256_gcm_sha384
+      policy_name: ssl_policy20170401
     authentication_certificates:
       - name: cert1
         data: "{{ lookup('file', cert1_file) }}"
@@ -657,11 +647,7 @@
       capacity: 2
     ssl_policy:
       policy_type: predefined
-      policy_name: ssl_policy20150501
-      disabled_ssl_protocols:
-        - tls_v1_0
-      cipher_suites:
-        - tls_ecdhe_ecdsa_with_aes_256_gcm_sha384
+      policy_name: ssl_policy20170401
     authentication_certificates:
       - name: cert1
         data: "{{ lookup('file', cert1_file) }}"
@@ -763,11 +749,7 @@
       capacity: 2
     ssl_policy:
       policy_type: predefined
-      policy_name: ssl_policy20150501
-      disabled_ssl_protocols:
-        - tls_v1_0
-      cipher_suites:
-        - tls_ecdhe_ecdsa_with_aes_256_gcm_sha384
+      policy_name: ssl_policy20170401
     authentication_certificates:
       - name: cert1
         data: "{{ lookup('file', cert1_file) }}"
@@ -858,11 +840,7 @@
       capacity: 2
     ssl_policy:
       policy_type: predefined
-      policy_name: ssl_policy20150501
-      disabled_ssl_protocols:
-        - tls_v1_0
-      cipher_suites:
-        - tls_ecdhe_ecdsa_with_aes_256_gcm_sha384
+      policy_name: ssl_policy20170401
     authentication_certificates:
       - name: cert1
         data: "{{ lookup('file', cert1_file) }}"
@@ -1264,8 +1242,25 @@
     that:
       - output.changed
 
+- name: Delete Application Gateway with complex routing and redirect rules
+  azure_rm_appgateway:
+    resource_group: "{{ resource_group }}"
+    name: "appgateway-complex{{ rpfx }}"
+    state: absent
+  register: output
+- name: Assert the state has changed
+  assert:
+    that:
+      - output.changed
+
 - name: Delete virtual network
   azure_rm_virtualnetwork:
     name: vnet{{ rpfx }}
     resource_group: "{{ resource_group }}"
+    state: absent
+
+- name: Delete public ip
+  azure.azcollection.azure_rm_publicipaddress:
+    resource_group: "{{ resource_group }}"
+    name: "appgateway-subnet-lookup-public-ip"
     state: absent

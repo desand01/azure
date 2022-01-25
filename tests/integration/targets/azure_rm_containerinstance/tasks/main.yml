@@ -304,3 +304,65 @@
   assert:
     that:
       - output.changed == False
+
+- name: Create sample container instance
+  azure_rm_containerinstance:
+    resource_group: "{{ resource_group }}"
+    name: "aci{{ resource_group | hash('md5') | truncate(7, True, '') }}"
+    os_type: Linux
+    ip_address: Public
+    location: eastus
+    containers:
+      - name: mycontainer1
+        image: httpd
+        memory: 1.5
+        ports:
+        - port: 80
+          protocol: TCP
+        - port: 81
+          protocol: TCP
+  register: output
+
+- debug:
+    var: output
+
+- name: Assert the container instance is well created
+  assert:
+    that:
+      - output.changed
+      - output.provisioning_state == 'Succeeded'
+
+- name: Execute bash command - disabled - async thread for websocket not starting in test
+  azure_rm_containerinstance:
+    resource_group: "{{ resource_group }}"
+    name: "aci{{ resource_group | hash('md5') | truncate(7, True, '') }}"
+    state: "execute"
+    terminal:
+      container: mycontainer1
+      lines:
+      - 'echo "Allo world"'
+      - 'read input'
+      - 'answer'
+      - 'echo $input'
+  register: output
+  when: False
+
+- name: Restart container
+  azure_rm_containerinstance:
+    resource_group: "{{ resource_group }}"
+    name: "aci{{ resource_group | hash('md5') | truncate(7, True, '') }}"
+    state: "restart"
+    restart_wait: 300
+
+- name: Stop container
+  azure_rm_containerinstance:
+    resource_group: "{{ resource_group }}"
+    name: "aci{{ resource_group | hash('md5') | truncate(7, True, '') }}"
+    state: "stop"
+    restart_wait: 300
+
+- name: Remove container instance
+  azure_rm_containerinstance:
+    resource_group: "{{ resource_group }}"
+    name: "aci{{ resource_group | hash('md5') | truncate(7, True, '') }}"
+    state: absent

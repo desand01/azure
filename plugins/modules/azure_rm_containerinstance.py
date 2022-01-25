@@ -124,7 +124,6 @@ options:
                 description:
                     - Wait until regex match last received message from container or wait_timeout is reach
                 type: str
-                default: '[#$:] $'
     containers:
         description:
             - List of containers.
@@ -592,7 +591,7 @@ terminal_spec = dict(
     command=dict(type='str',default='/bin/sh'),
     lines=dict(type='list',elements='str',required=True),
     wait_timeout=dict(type='int',default=120),
-    wait_regex=dict(type='str',default='[#$:] $'),
+    wait_regex=dict(type='str'),
     fail_on_timeout=dict(type='bool',default=True)
 )
 
@@ -617,7 +616,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             state=dict(
                 type='str',
                 default='present',
-                choices=['present', 'absent','restart','execute']
+                choices=['present', 'absent','restart','stop','execute']
             ),
             location=dict(
                 type='str',
@@ -738,6 +737,8 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                 self.log("Nothing to delete")
             elif self.state == 'restart':
                 self.log("Nothing to restart")
+            elif self.state == 'stop':
+                self.log("Nothing to stop")
             elif self.state == 'execute':
                 self.log("Container Group doesn't exist")
             else:
@@ -803,7 +804,9 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                 self.results['changed'] = True
             else:
                 self.fail("Error when restarting containers: {0}".format(response))
-
+        elif self.state == 'stop':
+            self.log("Restart the container instance")
+            response = self.stop_containerinstance(response)
         return self.results
 
     def execute_containerinstance(self, response):
@@ -824,6 +827,18 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         finally:
             if terminal is not None:
                 terminal.close()
+
+    def stop_containerinstance(self, response):
+        self.log("Stop the container instance {0}".format(self.name))
+        try:
+            if response.instance_view.state == 'Running':
+                self.containerinstance_client.container_groups.stop(resource_group_name=self.resource_group, container_group_name=self.name)
+                self.results['state']['stop'] = 'Succeeded'
+            else:
+                self.results['state']['stop'] = 'Skip'
+            
+        except (CloudError, HttpResponseError) as exc:
+            self.fail("Error when stoping containers group {0}: {1}".format(self.name, exc.message or str(exc)))
 
     def restart_containerinstance(self, response):
         self.log("Restart the container instance {0}".format(self.name))
@@ -847,14 +862,16 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         if len(self.ports) > 0:
             self.module.deprecate("The option 'ports' is deprecated, use 'ports' under I(containers)")
 
-        cap = _snake_to_camel(self.os_type, True)
-        if self.os_type != cap:
-            self.module.deprecate("The option container.os_type '{0}' has been renamed to '{1}'".format(self.os_type, cap))
-            self.os_type = cap
-        cap = _snake_to_camel(self.ip_address, True)
-        if self.ip_address != cap:
-            self.module.deprecate("The option container.ip_address '{0}' has been renamed to '{1}'".format(self.os_type, cap))
-            self.ip_address = cap
+        if self.os_type:
+            cap = _snake_to_camel(self.os_type, True)
+            if self.os_type != cap:
+                self.module.deprecate("The option container.os_type '{0}' has been renamed to '{1}'".format(self.os_type, cap))
+                self.os_type = cap
+        if self.ip_address != 'none':
+            cap = _snake_to_camel(self.ip_address, True)
+            if self.ip_address != cap:
+                self.module.deprecate("The option container.ip_address '{0}' has been renamed to '{1}'".format(self.ip_address, cap))
+                self.ip_address = cap
 
 
     def normalize_container_def(self, container):
@@ -864,12 +881,12 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             for port in container['ports']:
                 if isinstance(port, dict):
                     new_ports.append(port)
-                #self.module.warn("Implicit conversion of param port {0} for container {1} to dict(protocol='TPC',port='{0}')".format(port, container['name']))
-                self.module.deprecate("Implicit conversion of param port '{0}' for container {1} to dict(protocol='TPC',port='{0}')".format(port, container['name']))
-                new_ports.append(dict(
-                    protocol='TCP',
-                    port=port
-                ))
+                else:
+                    self.module.deprecate("Implicit conversion of param port '{0}' for container {1} to dict(protocol='TPC',port='{0}')".format(port, container['name']))
+                    new_ports.append(dict(
+                        protocol='TCP',
+                        port=port
+                    ))
             container['ports'] = new_ports
 
     def new_containerinstance(self):

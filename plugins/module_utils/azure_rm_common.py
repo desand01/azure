@@ -1853,6 +1853,7 @@ class AzureRMTerminal(object):
     _wait_regex = None
     _wait_timeout = 120
     _fail_on_timeout = True
+    _on_error_exception = None
     _exec_info = dict(
         uri='',
         password='',
@@ -1863,7 +1864,7 @@ class AzureRMTerminal(object):
     def __init__(self, containerExecResponse, args):
         self._exec_info['uri'] = containerExecResponse.web_socket_uri
         self._exec_info['password'] = containerExecResponse.password
-        self._wait_regex = re.compile(args['wait_regex'] or '[#$:>] $')
+        self._wait_regex = re.compile(args['wait_regex'] or '[#$:>] $|\\bread\\b.*$')
         self._wait_timeout = 120 if args['wait_timeout'] is None else args['wait_timeout']
         self._fail_on_timeout = True if args['fail_on_timeout'] is None else args['fail_on_timeout']
         import _thread
@@ -1878,7 +1879,9 @@ class AzureRMTerminal(object):
         while x < _timeout:
             x += 1
             current = len(ar)
-            if current == 0 or self._ready == False:
+            if self._on_error_exception:
+                raise self._on_error_exception
+            elif current == 0 or self._ready == False:
                 sleep(1)
             elif size < len(ar):
                 size = len(ar)
@@ -1894,15 +1897,24 @@ class AzureRMTerminal(object):
 
     def _ws_thread(self, *args):
         import websocket
-        self._websocket = websocket.WebSocketApp(self._exec_info['uri'], on_open = self._ws_open, on_message = self._ws_message)
-        self._websocket.run_forever()
-        
+        try:
+            self._websocket = websocket.WebSocketApp(self._exec_info['uri'], on_open = self._ws_open, on_message = self._ws_message, on_error = self._ws_error)
+            self._websocket.run_forever()
+        except Exception as exc:
+            self._on_error_exception = exc
+
+    def _ws_error(self, ws, ex):
+        self._on_error_exception = ex
+
     def _ws_open(self, ws):
         ws.send(self._exec_info['password'])
         self._ready = True
 
     def _ws_message(self, ws, message):
-        self._exec_info['console'].append(message)
+        if type(message) == bytes:
+            self._exec_info['console'].append(message.decode('utf-8'))
+        else:
+            self._exec_info['console'].append(message)
 
     def execute(self, lines):
         for line in lines:

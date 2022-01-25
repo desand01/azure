@@ -91,6 +91,7 @@ gateways:
             sample: Succeeded
 '''
 
+import re
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
 
 try:
@@ -201,29 +202,30 @@ class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
     def get_private_ip(self, response):
         self.log('Get private ip for {0}'.format(self.name))
         if response:
-            frontend_ip_configurations = response['frontend_ip_configurations']
+            frontend_ip_configurations = response.frontend_ip_configurations
             for item in frontend_ip_configurations:
-                if 'private_ip_address' in item:
-                    return item['private_ip_address']
-        return '0.0.0.0'
+                if item.private_ip_address:
+                    return item.private_ip_address
+        return None
 
     def get_public_ip(self, response):
         self.log('Get public ip for {0}'.format(self.name))
         if response:
             id = None
-            frontend_ip_configurations = response['frontend_ip_configurations']
+            frontend_ip_configurations = response.frontend_ip_configurations
             for item in frontend_ip_configurations:
-                if 'public_ip_address' in item:
-                    if 'id' in item['public_ip_address']:
-                        id = re.search(r'[^/]+$', item['public_ip_address']['id']).group()
+                if item.public_ip_address:
+                    match = re.search(r'([^/]+)/providers/Microsoft.Network/publicIPAddresses/([^/]+)$', item.public_ip_address.id)
+                    resource_group = match.group(1)
+                    id = match.group(2)
                     break
             try:
                 if id:
-                    item = self.network_client.public_ip_addresses.get(self.resource_group, id)
+                    item = self.network_client.public_ip_addresses.get(resource_group, id)
                     return item.ip_address
             except CloudError:
                 pass
-        return '0.0.0.0'
+        return None
 
 def main():
     AzureRMApplicationGatewayInfo()

@@ -951,7 +951,6 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 default='present',
                 choices=['present', 'absent']
             ),
-            force=dict(type='bool', default=False),
         )
 
         self.resource_group = None
@@ -963,7 +962,6 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         self.state = None
         self.gateway_state = None
         self.to_do = Actions.NoAction
-        self.force = None
 
         super(AzureRMApplicationGateways, self).__init__(derived_arg_spec=self.module_arg_spec,
                                                          supports_check_mode=True,
@@ -1306,12 +1304,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 self.to_do = Actions.Update
 
         if (self.to_do == Actions.Update):
-            if not self.force:
-                object_assign_original(old_response, self.parameters, 'backend_address_pools')
-                object_assign_original(old_response, self.parameters, 'backend_http_settings_collection')
-                object_assign_original(old_response, self.parameters, 'http_listeners')
-                object_assign_original(old_response, self.parameters, 'request_routing_rules')
-            elif (old_response['operational_state'] == 'Stopped' and self.gateway_state == 'started'):
+            if (old_response['operational_state'] == 'Stopped' and self.gateway_state == 'started'):
                 self.to_do = Actions.Start
             elif (old_response['operational_state'] == 'Running' and self.gateway_state == 'stopped'):
                 self.to_do = Actions.Stop
