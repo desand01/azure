@@ -193,7 +193,7 @@ container_groups:
             sample: { "tag1": "abc" }
 '''
 
-from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
+from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBaseEx
 from ansible.module_utils.common.dict_transformations import _camel_to_snake
 
 try:
@@ -206,7 +206,7 @@ except ImportError:
     pass
 
 
-class AzureRMContainerInstanceInfo(AzureRMModuleBase):
+class AzureRMContainerInstanceInfo(AzureRMModuleBaseEx):
     def __init__(self):
         # define user inputs into argument
         self.module_arg_spec = dict(
