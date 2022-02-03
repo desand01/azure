@@ -158,6 +158,7 @@ state:
 from ansible.module_utils.basic import _load_params
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase, HAS_AZURE, \
     format_resource_id
+from ansible.module_utils.common._json_compat import json
 
 try:
     from msrestazure.azure_exceptions import CloudError
@@ -220,6 +221,11 @@ class AzureRMVirtualNetworkLink(AzureRMModuleBase):
         self.get_resource_group(self.resource_group)
 
         if self.virtual_network:
+            if self.virtual_network.startswith("{"):
+                try:
+                    self.virtual_network = json.loads(self.virtual_network.replace("'", '"'))
+                except Exception as exc:
+                    self.log('Failed to parse virtual_network: {0}'.format(str(exc)))
             virtual_network = self.parse_resource_to_dict(self.virtual_network)
             self.virtual_network = format_resource_id(val=virtual_network['name'],
                                                       subscription_id=virtual_network['subscription_id'],

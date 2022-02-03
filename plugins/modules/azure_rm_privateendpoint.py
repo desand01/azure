@@ -60,6 +60,26 @@ options:
                     - The ID(s) of the group(s) obtained from the remote resource that this private endpoint should connect to.
                 type: list
                 elements: str
+    manual_private_link_service_connections:
+        description:
+            - A grouping of information about the connection to the remote resource.
+            - This parameter is required for create or update.
+        type: list
+        elements: dict
+        suboptions:
+            name:
+                description:
+                    - The name of the resource that is unique within a resource group.
+                type: str
+            private_link_service_id:
+                description:
+                    - The resource id of the private endpoint to connect to.
+                type: str
+            group_ids:
+                description:
+                    - The ID(s) of the group(s) obtained from the remote resource that this private endpoint should connect to.
+                type: list
+                elements: str
     state:
         description:
             - State of the virtual network. Use C(present) to create or update and C(absent) to delete.
@@ -175,6 +195,7 @@ except ImportError:
     # This is handled in azure_rm_common
     pass
 
+import re
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common_ext import AzureRMModuleBaseExt
 
 
@@ -186,12 +207,15 @@ network_interfaces_spec = dict(
 private_service_connection_spec = dict(
     name=dict(type='str'),
     private_link_service_id=dict(type='str'),
-    group_ids=dict(type='list', elements='str')
+    group_ids=dict(type='list', elements='str'),
+    request_message=dict(type='str', default='Auto-Approved'),
 )
 
 
 subnet_spec = dict(
-    id=dict(type='str')
+    id=dict(type='str'),
+    vnet=dict(type='str'),
+    subnet=dict(type='str')
 )
 
 
@@ -210,6 +234,7 @@ class AzureRMPrivateEndpoint(AzureRMModuleBaseExt):
             location=dict(type='str'),
             subnet=dict(type='dict', options=subnet_spec),
             private_link_service_connections=dict(type='list', elements='dict', options=private_service_connection_spec),
+            manual_private_link_service_connections=dict(type='list', elements='dict', options=private_service_connection_spec),
         )
 
         self.resource_group = None
@@ -238,6 +263,20 @@ class AzureRMPrivateEndpoint(AzureRMModuleBaseExt):
                 self.body[key] = kwargs[key]
 
         self.inflate_parameters(self.module_arg_spec, self.body, 0)
+
+        if 'subnet' in self.body and not self.body['subnet']['id']:
+            subnet = self.body['subnet']
+            subnet['id'] = self.subnet_id(subnet.pop('vnet'), subnet.pop('subnet'))
+
+        if 'private_link_service_connections' in self.body:
+            self.body['private_link_service_connections'] = [
+                self.private_link(item)
+            for item in self.body['private_link_service_connections'] or []]
+
+        if 'manual_private_link_service_connections' in self.body:
+            self.body['manual_private_link_service_connections'] = [
+                self.private_link(item)
+            for item in self.body['manual_private_link_service_connections'] or []]
 
         resource_group = self.get_resource_group(self.resource_group)
         if not self.location:
@@ -278,6 +317,26 @@ class AzureRMPrivateEndpoint(AzureRMModuleBaseExt):
             self.results['state'] = response
         return self.results
 
+    def private_link(self, item):
+        if 'private_link_service_id' in item:
+            item['private_link_service_id']=self.service_id(item.get('private_link_service_id'))
+        return item
+    def service_id(self, name):
+        return '/subscriptions/{0}/resourceGroups/{1}/providers/{2}'.format(
+            self.subscription_id,
+            self.resource_group,
+            name
+        )
+
+    def subnet_id(self, virtual_network_name, name):
+        """Generate the id for a subnet in a virtual network"""
+        return '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/virtualNetworks/{2}/subnets/{3}'.format(
+            self.subscription_id,
+            self.resource_group,
+            virtual_network_name,
+            name
+        )
+        
     def create_update_resource_private_endpoint(self, privateendpoint):
         try:
             poller = self.network_client.private_endpoints.create_or_update(resource_group_name=self.resource_group,
@@ -324,11 +383,32 @@ class AzureRMPrivateEndpoint(AzureRMModuleBaseExt):
         if privateendpoint.network_interfaces and len(privateendpoint.network_interfaces) > 0:
             results['network_interfaces'] = []
             for interface in privateendpoint.network_interfaces:
-                results['network_interfaces'].append(interface.id)
+                item = None
+                try:
+                    match = re.search(r'([^/]+)/providers/Microsoft.Network/networkInterfaces/([^/]+)$', interface.id)
+                    resource_group = match.group(1)
+                    id = match.group(2)
+                    item = self.network_client.network_interfaces.get(resource_group, id)
+                except Exception:
+                    pass
+                if item:
+                    results['network_interfaces'].append(dict(
+                        id=interface.id,
+                        name=id,
+                        private_ip_address=[
+                            ip_config.private_ip_address
+                        for ip_config in item.ip_configurations ]
+                    ))
+                else:
+                    results['network_interfaces'].append(interface.id)
         if privateendpoint.private_link_service_connections and len(privateendpoint.private_link_service_connections) > 0:
             results['private_link_service_connections'] = []
             for connections in privateendpoint.private_link_service_connections:
                 results['private_link_service_connections'].append(dict(private_link_service_id=connections.private_link_service_id, name=connections.name))
+        if privateendpoint.manual_private_link_service_connections and len(privateendpoint.manual_private_link_service_connections) > 0:
+            results['manual_private_link_service_connections'] = []
+            for connections in privateendpoint.manual_private_link_service_connections:
+                results['manual_private_link_service_connections'].append(dict(private_link_service_id=connections.private_link_service_id, name=connections.name))
 
         return results
 
