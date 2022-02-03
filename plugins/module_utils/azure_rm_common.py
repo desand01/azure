@@ -265,6 +265,7 @@ try:
     from azure.mgmt.rdbms.mariadb import MariaDBManagementClient
     from azure.mgmt.containerregistry import ContainerRegistryManagementClient
     from azure.mgmt.containerinstance import ContainerInstanceManagementClient
+    from azure.mgmt.cosmosdb import CosmosDBManagementClient
     from azure.mgmt.loganalytics import LogAnalyticsManagementClient
     import azure.mgmt.loganalytics.models as LogAnalyticsModels
     from azure.mgmt.automation import AutomationClient
@@ -1757,6 +1758,7 @@ class AzureRMAuth(object):
 
 class AzureRMModuleBaseEx(AzureRMModuleBase):
     _retrocompatibility = True
+    _cosmosdb_client = None
 
     def __init__(self, derived_arg_spec, bypass_checks=False, no_log=False,
                  check_invalid_arguments=None, mutually_exclusive=None, required_together=None,
@@ -1779,8 +1781,21 @@ class AzureRMModuleBaseEx(AzureRMModuleBase):
 
         return self._containerinstance_client
 
+    @property
+    def cosmosdb_client(self):
+        self.log('Getting container instance mgmt client')
+        if not self._cosmosdb_client:
+            self._retrocompatibility = False
+            self._cosmosdb_client = self.get_mgmt_svc_client(CosmosDBManagementClient,
+                                                                      base_url=self._cloud_environment.endpoints.resource_manager,
+                                                                      api_version='2018-12-31',
+                                                                      sub_service_model='database_accounts')
+            self._retrocompatibility = True
 
-    def get_mgmt_svc_client(self, client_type, base_url=None, api_version=None, suppress_subscription_id=False):
+        return self._cosmosdb_client
+
+
+    def get_mgmt_svc_client(self, client_type, base_url=None, api_version=None, suppress_subscription_id=False, sub_service_model=None):
         self.log('Getting management service client ex {0}'.format(client_type.__name__))
         if self._retrocompatibility:
             return super(AzureRMModuleBaseEx, self).get_mgmt_svc_client(client_type, base_url, api_version, suppress_subscription_id)
@@ -1827,14 +1842,18 @@ class AzureRMModuleBaseEx(AzureRMModuleBase):
         client = client_type(**client_kwargs)
 
         # FUTURE: remove this once everything exposes models directly (eg, containerinstance)
-        try:
-            getattr(client, "models")
-        except AttributeError:
-            def _ansible_get_models(self, *arg, **kwarg):
-                return self._ansible_models
+        if sub_service_model:
+            sub = getattr(client, sub_service_model)
+            client.models = sub.models
+        else:
+            try:
+                getattr(client, "models")
+            except AttributeError:
+                def _ansible_get_models(self, *arg, **kwarg):
+                    return self._ansible_models
 
-            setattr(client, '_ansible_models', importlib.import_module(client_type.__module__).models)
-            client.models = types.MethodType(_ansible_get_models, client)
+                setattr(client, '_ansible_models', importlib.import_module(client_type.__module__).models)
+                client.models = types.MethodType(_ansible_get_models, client)
 
         #client.config = self.add_user_agent(client.config)
 
@@ -1927,7 +1946,10 @@ class AzureRMTerminal(object):
 
     def close(self):
         if self._websocket is not None:
-            self._websocket.close()
+            try:
+                self._websocket.close()
+            except Exception as exc:
+                pass
             self._websocket = None
 
     @property

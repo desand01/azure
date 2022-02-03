@@ -184,15 +184,19 @@ id:
 '''
 
 import time
-from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
+from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBaseEx
 from ansible.module_utils.common.dict_transformations import _snake_to_camel
 
 try:
     from msrestazure.azure_exceptions import CloudError
-    from msrest.polling import LROPoller
+    #from msrest.polling import LROPoller
+    from azure.core.polling import LROPoller
     from msrestazure.azure_operation import AzureOperationPoller
-    from azure.mgmt.cosmosdb import CosmosDB
+    #from azure.mgmt.cosmosdb import CosmosDB
+    
+    #from azure.mgmt.resource import ResourceManagementClient
     from msrest.serialization import Model
+    from azure.core.exceptions import ResourceNotFoundError
 except ImportError:
     # This is handled in azure_rm_common
     pass
@@ -202,7 +206,7 @@ class Actions:
     NoAction, Create, Update, Delete = range(4)
 
 
-class AzureRMCosmosDBAccount(AzureRMModuleBase):
+class AzureRMCosmosDBAccount(AzureRMModuleBaseEx):
     """Configuration class for an Azure RM Database Account resource"""
 
     def __init__(self):
@@ -223,6 +227,10 @@ class AzureRMCosmosDBAccount(AzureRMModuleBase):
                 choices=['global_document_db',
                          'mongo_db',
                          'parse']
+            ),
+            public_network_access=dict(
+                type='str',
+                choices=['Enabled','Disabled']
             ),
             consistency_policy=dict(
                 type='dict',
@@ -277,20 +285,53 @@ class AzureRMCosmosDBAccount(AzureRMModuleBase):
             enable_gremlin=dict(
                 type='bool'
             ),
-            virtual_network_rules=dict(
+            ip_rules=dict(
                 type='list',
+                elements='dict',
                 options=dict(
-                    id=dict(
+                    ip_address_or_range=dict(
                         type='str',
                         required=True
+                    )
+                )
+            ),
+            virtual_network_rules=dict(
+                type='list',
+                elements='dict',
+                mutually_exclusive=[('subnet', 'virtual_network_name'),('subnet', 'subnet_name'),('subnet', 'resource_group')],
+                required_one_of=[('subnet', 'virtual_network_name')],
+                required_together=[('virtual_network_name', 'subnet_name')],
+                options=dict(
+                    subnet=dict(
+                        type='str'
                     ),
-                    ignore_missing_vnet_service_endpoint=dict(
-                        type='bool'
+                    virtual_network_name=dict(
+                        type='str'
+                    ),
+                    subnet_name=dict(
+                        type='str'
+                    ),
+                    resource_group=dict(
+                        type='str'
+                    ),
+                    ignore_missing_v_net_service_endpoint=dict(
+                        type='bool',
+                        aliases=['ignore_missing_vnet_service_endpoint']
                     )
                 )
             ),
             enable_multiple_write_locations=dict(
                 type='bool'
+            ),
+            api_properties=dict(
+                type='dict',
+                options=dict(
+                    server_version=dict(
+                        type='str',
+                        choices=['3.2','3.6','4.0'],
+                        required=True
+                    )
+                )
             ),
             state=dict(
                 type='str',
@@ -304,7 +345,7 @@ class AzureRMCosmosDBAccount(AzureRMModuleBase):
         self.parameters = dict()
 
         self.results = dict(changed=False)
-        self.mgmt_client = None
+        #self.cosmosdb_client = None
         self.state = None
         self.to_do = Actions.NoAction
 
@@ -342,18 +383,23 @@ class AzureRMCosmosDBAccount(AzureRMModuleBase):
 
         for rule in self.parameters.get('virtual_network_rules', []):
             subnet = rule.pop('subnet')
-            if isinstance(subnet, dict):
-                virtual_network_name = subnet.get('virtual_network_name')
-                subnet_name = subnet.get('subnet_name')
-                resource_group_name = subnet.get('resource_group', self.resource_group)
+            if not subnet:
+                virtual_network_name = rule.pop('virtual_network_name')
+                subnet_name = rule.pop('subnet_name')
+                resource_group_name = rule.pop('resource_group') or self.resource_group
                 template = "/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/virtualNetworks/{2}/subnets/{3}"
                 subnet = template.format(self.subscription_id, resource_group_name, virtual_network_name, subnet_name)
             rule['id'] = subnet
+            if 'ignore_missing_vnet_service_endpoint' in rule:
+                rule['ignore_missing_v_net_service_endpoint'] = rule.pop('ignore_missing_vnet_service_endpoint')
 
+
+        if len(self.parameters.get('virtual_network_rules', [])) > 0:
+            self.parameters['is_virtual_network_filter_enabled'] = True
         response = None
 
-        self.mgmt_client = self.get_mgmt_svc_client(CosmosDB,
-                                                    base_url=self._cloud_environment.endpoints.resource_manager)
+        #self.cosmosdb_client = self.get_mgmt_svc_client(CosmosDBManagementClient, base_url=self._cloud_environment.endpoints.resource_manager)
+        #self.cosmosdb_client = self.cosmosdb_client()
 
         resource_group = self.get_resource_group(self.resource_group)
 
@@ -414,7 +460,7 @@ class AzureRMCosmosDBAccount(AzureRMModuleBase):
         self.log("Creating / Updating the Database Account instance {0}".format(self.name))
 
         try:
-            response = self.mgmt_client.database_accounts.create_or_update(resource_group_name=self.resource_group,
+            response = self.cosmosdb_client.database_accounts.begin_create_or_update(resource_group_name=self.resource_group,
                                                                            account_name=self.name,
                                                                            create_update_parameters=self.parameters)
             if isinstance(response, LROPoller) or isinstance(response, AzureOperationPoller):
@@ -433,7 +479,7 @@ class AzureRMCosmosDBAccount(AzureRMModuleBase):
         '''
         self.log("Deleting the Database Account instance {0}".format(self.name))
         try:
-            response = self.mgmt_client.database_accounts.delete(resource_group_name=self.resource_group,
+            response = self.cosmosdb_client.database_accounts.delete(resource_group_name=self.resource_group,
                                                                  account_name=self.name)
 
             # This currently doesn't work as there is a bug in SDK / Service
@@ -454,12 +500,12 @@ class AzureRMCosmosDBAccount(AzureRMModuleBase):
         self.log("Checking if the Database Account instance {0} is present".format(self.name))
         found = False
         try:
-            response = self.mgmt_client.database_accounts.get(resource_group_name=self.resource_group,
+            response = self.cosmosdb_client.database_accounts.get(resource_group_name=self.resource_group,
                                                               account_name=self.name)
             found = True
             self.log("Response : {0}".format(response))
             self.log("Database Account instance : {0} found".format(response.name))
-        except CloudError as e:
+        except ResourceNotFoundError as e:
             self.log('Did not find the Database Account instance.')
         if found is True:
             return response.as_dict()

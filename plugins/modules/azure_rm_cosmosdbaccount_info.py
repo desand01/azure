@@ -339,19 +339,18 @@ accounts:
             sample: { "tag1":"abc" }
 '''
 
-from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
+from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBaseEx
 from ansible.module_utils.common.dict_transformations import _camel_to_snake
 
 try:
     from msrestazure.azure_exceptions import CloudError
-    from azure.mgmt.cosmosdb import CosmosDB
     from msrest.serialization import Model
 except ImportError:
     # This is handled in azure_rm_common
     pass
 
 
-class AzureRMCosmosDBAccountInfo(AzureRMModuleBase):
+class AzureRMCosmosDBAccountInfo(AzureRMModuleBaseEx):
     def __init__(self):
         # define user inputs into argument
         self.module_arg_spec = dict(
@@ -376,7 +375,6 @@ class AzureRMCosmosDBAccountInfo(AzureRMModuleBase):
         self.results = dict(
             changed=False
         )
-        self.mgmt_client = None
         self.resource_group = None
         self.name = None
         self.tags = None
@@ -393,9 +391,7 @@ class AzureRMCosmosDBAccountInfo(AzureRMModuleBase):
 
         for key in self.module_arg_spec:
             setattr(self, key, kwargs[key])
-        self.mgmt_client = self.get_mgmt_svc_client(CosmosDB,
-                                                    base_url=self._cloud_environment.endpoints.resource_manager)
-
+        
         if self.name is not None:
             self.results['accounts'] = self.get()
         elif self.resource_group is not None:
@@ -408,7 +404,7 @@ class AzureRMCosmosDBAccountInfo(AzureRMModuleBase):
         response = None
         results = []
         try:
-            response = self.mgmt_client.database_accounts.get(resource_group_name=self.resource_group,
+            response = self.cosmosdb_client.database_accounts.get(resource_group_name=self.resource_group,
                                                               account_name=self.name)
             self.log("Response : {0}".format(response))
         except CloudError as e:
@@ -423,7 +419,7 @@ class AzureRMCosmosDBAccountInfo(AzureRMModuleBase):
         response = None
         results = []
         try:
-            response = self.mgmt_client.database_accounts.list_by_resource_group(resource_group_name=self.resource_group)
+            response = self.cosmosdb_client.database_accounts.list_by_resource_group(resource_group_name=self.resource_group)
             self.log("Response : {0}".format(response))
         except CloudError as e:
             self.log('Could not get facts for Database Account.')
@@ -439,7 +435,7 @@ class AzureRMCosmosDBAccountInfo(AzureRMModuleBase):
         response = None
         results = []
         try:
-            response = self.mgmt_client.database_accounts.list()
+            response = self.cosmosdb_client.database_accounts.list()
             self.log("Response : {0}".format(response))
         except CloudError as e:
             self.log('Could not get facts for Database Account.')
@@ -476,7 +472,7 @@ class AzureRMCosmosDBAccountInfo(AzureRMModuleBase):
                                  'document_endpoint': wl['document_endpoint'],
                                  'provisioning_state': wl['provisioning_state']} for wl in d['write_locations']],
             'database_account_offer_type': d.get('database_account_offer_type'),
-            'ip_range_filter': d['ip_range_filter'],
+            'ip_rules': d['ip_rules'],
             'is_virtual_network_filter_enabled': d.get('is_virtual_network_filter_enabled'),
             'enable_automatic_failover': d.get('enable_automatic_failover'),
             'enable_cassandra': 'EnableCassandra' in d.get('capabilities', []),
@@ -490,19 +486,19 @@ class AzureRMCosmosDBAccountInfo(AzureRMModuleBase):
         }
 
         if self.retrieve_keys == 'all':
-            keys = self.mgmt_client.database_accounts.list_keys(resource_group_name=self.resource_group,
+            keys = self.cosmosdb_client.database_accounts.list_keys(resource_group_name=self.resource_group,
                                                                 account_name=self.name)
             d['primary_master_key'] = keys.primary_master_key
             d['secondary_master_key'] = keys.secondary_master_key
             d['primary_readonly_master_key'] = keys.primary_readonly_master_key
             d['secondary_readonly_master_key'] = keys.secondary_readonly_master_key
         elif self.retrieve_keys == 'readonly':
-            keys = self.mgmt_client.database_accounts.get_read_only_keys(resource_group_name=self.resource_group,
+            keys = self.cosmosdb_client.database_accounts.get_read_only_keys(resource_group_name=self.resource_group,
                                                                          account_name=self.name)
             d['primary_readonly_master_key'] = keys.primary_readonly_master_key
             d['secondary_readonly_master_key'] = keys.secondary_readonly_master_key
         if self.retrieve_connection_strings:
-            connection_strings = self.mgmt_client.database_accounts.list_connection_strings(resource_group_name=self.resource_group,
+            connection_strings = self.cosmosdb_client.database_accounts.list_connection_strings(resource_group_name=self.resource_group,
                                                                                             account_name=self.name)
             d['connection_strings'] = connection_strings.as_dict()
         return d
