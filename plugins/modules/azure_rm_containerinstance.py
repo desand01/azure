@@ -5,7 +5,9 @@
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
-from typing import Protocol
+from typing import List, Protocol
+
+from setuptools import Require
 __metaclass__ = type
 
 
@@ -595,6 +597,28 @@ terminal_spec = dict(
     fail_on_timeout=dict(type='bool',default=True)
 )
 
+dns_config_spec = dict(
+    name_servers=dict(type='list',elements='str',required=True),
+    search_domains=dict(type='str'),
+    options=dict(type='str'),
+)
+
+log_analytics_spec=dict(
+    workspace_id=dict(type='str',required=True),
+    workspace_key=dict(type='str',required=True),
+    log_type=dict(type='str', choices=['ContainerInsights','ContainerInstanceLogs']),
+    metadata=dict(type='str'),
+    workspace_resource_id=dict(type='str')
+)
+
+diagnostics_spec=dict(
+    log_analytics=dict(
+        type='dict',
+        options=log_analytics_spec,
+        mutually_exclusive = [['workspace_resource_id', 'workspace_id'],['workspace_resource_id','workspace_key']]
+    ),
+)
+
 class AzureRMContainerInstance(AzureRMModuleBaseEx):
     """Configuration class for an Azure RM container instance resource"""
 
@@ -671,6 +695,14 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                 elements='dict',
                 options=volumes_spec
             ),
+            dns_config=dict(
+                type='dict', 
+                options=dns_config_spec,
+            ),
+            diagnostics=dict(
+                type='dict', 
+                options=diagnostics_spec,
+            ),
             restart_wait=dict(
                 type='int',
                 default=None
@@ -690,6 +722,8 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         self.subnets = None
         self.dns_name_label = None
         self.containers = None
+        self.dns_config = None
+        self.diagnostics = None
         self.restart_policy = None
         self.restart_wait = None
 
@@ -905,6 +939,25 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                                                                           password=self.registry_password)]
 
         ip_address = None
+        dns_config = self.dns_config
+        if dns_config:
+            dns_config = self.cgmodels.DnsConfiguration(
+                name_servers=dns_config["name_servers"],
+                search_domains=dns_config["search_domains"],
+                options=dns_config["options"],
+            )
+
+        diagnostics = self.diagnostics
+        if diagnostics:
+            log_analytics = diagnostics["log_analytics"]
+            diagnostics = self.cgmodels.ContainerGroupDiagnostics(
+                log_analytics=self.cgmodels.LogAnalytics(
+                    workspace_id=log_analytics["workspace_id"],
+                    workspace_key=log_analytics["workspace_key"],
+                    log_type=log_analytics["log_type"],
+                    workspace_resource_id=log_analytics["workspace_resource_id"],
+                )
+            )
 
         containers = []
         all_ports = dict()
@@ -993,9 +1046,9 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                                                   restart_policy=_snake_to_camel(self.restart_policy, True) if self.restart_policy else None,
                                                   ip_address=ip_address,
                                                   volumes=volumes,
-                                                  diagnostics=None,
+                                                  diagnostics=diagnostics,
                                                   subnet_ids=subnets,
-                                                  dns_config=None,
+                                                  dns_config=dns_config,
                                                   sku=None,
                                                   encryption_properties=None,
                                                   init_containers=None)
@@ -1003,7 +1056,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         return parameters
 
     def compare(self, new_container, old_container):
-        old_container = self.assign_account_key(new_container, old_container)
+        old_container = self.assign_keys(new_container, old_container)
         new_container = self.object_assign(new_container, old_container)
         if not default_compare(new_container.as_dict(), old_container.as_dict(), ''):
             changed = True
@@ -1011,20 +1064,39 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             changed = False
         return changed
 
-    def assign_account_key(self, patch, origin):
-        attribute_map = ['volumes']
+    def assign_keys(self, patch, origin):
+        attribute_map = ['volumes', 'image_registry_credentials', 'diagnostics']
         for attribute in attribute_map:
             properties = getattr(patch, attribute)
             if not properties:
                 continue
+            if not isinstance(properties, list):
+                properties = [properties]
             references = getattr(origin, attribute) if origin else []
             for item in properties:
-                if not item.azure_file:
+                if isinstance(item, self.cgmodels.Volume):
+                    propertie = item.azure_file
+                    refs = [x for x in references if to_native(x.name) == item.name]
+                    ref = refs[0] if len(refs) > 0 else None
+                    ref.azure_file.storage_account_key  = propertie.storage_account_key if ref else None
                     continue
-                refs = [x for x in references if to_native(x.name) == item.name]
-                ref = refs[0] if len(refs) > 0 else None
-                ref.azure_file.storage_account_key  = item.azure_file.storage_account_key if ref else None
+
+                if isinstance(item, self.cgmodels.ImageRegistryCredential):
+                    refs = [x for x in references if to_native(x.username) == item.username]
+                    ref = refs[0] if len(refs) > 0 else None
+                    ref.password = item.password if ref else None
+                    continue
+
+                if isinstance(item, self.cgmodels.ContainerGroupDiagnostics):
+                    propertie = item.log_analytics
+                    ref = references #[x for x in references if to_native(x.name) == item.name]
+                    #ref = refs[0] if len(refs) > 0 else None
+                    ref.log_analytics.workspace_key = propertie.workspace_key if ref else None
+                    continue
+
         return origin
+
+
 
     def object_assign(self, patch, origin):
         attribute_map = set(self.cgmodels.ContainerGroup._attribute_map.keys()) - set(self.cgmodels.ContainerGroup._validation.keys())
