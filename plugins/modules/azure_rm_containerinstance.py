@@ -948,7 +948,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             )
 
         diagnostics = self.diagnostics
-        if diagnostics:
+        if diagnostics and "log_analytics" in diagnostics:
             log_analytics = diagnostics["log_analytics"]
             diagnostics = self.cgmodels.ContainerGroupDiagnostics(
                 log_analytics=self.cgmodels.LogAnalytics(
@@ -958,6 +958,8 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                     workspace_resource_id=log_analytics["workspace_resource_id"],
                 )
             )
+        else:
+            diagnostics = None
 
         containers = []
         all_ports = dict()

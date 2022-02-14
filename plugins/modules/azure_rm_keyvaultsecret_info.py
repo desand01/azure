@@ -324,7 +324,7 @@ class AzureRMKeyVaultSecretInfo(AzureRMModuleBase):
                 results.append(secretbundle_to_dict(response))
 
         except KeyVaultErrorException as e:
-            self.log("Did not find the key vault secret {0}: {1}".format(
+            self.fail("Did not find the key vault secret {0}: {1}".format(
                 self.name, str(e)))
         return results
 
