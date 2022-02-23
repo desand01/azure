@@ -193,7 +193,7 @@ class AzureRMAzureFirewallpolicy(AzureRMModuleBaseExt):
         else:
             if self.state == 'absent' \
             and (not 'rule_collections' in self.body or len(self.body['rule_collections']) == 0):
-                #only detele group if no collection is givent
+                #only detele group when no collection is givent
                 self.to_do = Actions.Delete
             else:
                 if self.state == 'absent':
@@ -381,8 +381,8 @@ def object_assign_original(old_params, new_params, param_name, to_do = Actions.U
             newArray.append(item)
         elif to_do != Actions.Delete:
             newItem = newvalues.pop(item[index_name])
-            if 'rules' in item:
-                object_assign_original(item, newItem, 'rules', to_do)
+            #if 'rules' in item:
+            #    object_assign_original(item, newItem, 'rules', to_do)
             newArray.append(newItem)
     if to_do != Actions.Delete:
         for key in newvalues:
