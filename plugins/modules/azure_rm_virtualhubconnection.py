@@ -494,6 +494,16 @@ class Actions:
     NoAction, Create, Update, Delete = range(4)
 
 
+propagated_route_tables_spec = dict(
+    labels=dict(type='list', elements='str'),
+    ids=dict(type='list', elements='str'),
+)
+
+routing_configuration_spec = dict(
+    associated_route_table=dict(type='str', required=True),
+    propagated_route_tables=dict(type='dict', options=propagated_route_tables_spec),
+)
+
 class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
     def __init__(self):
         self.module_arg_spec = dict(
@@ -534,6 +544,10 @@ class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
             enable_internet_security=dict(
                 type='bool',
                 default=False
+            ),
+            routing_configuration=dict(
+                type='dict', 
+                options=routing_configuration_spec
             ),
             state=dict(
                 type='str',
@@ -579,6 +593,31 @@ class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
                     self.body['remote_virtual_network']['name']
                 )
             )
+
+        if 'routing_configuration' in self.body:
+            routing_configuration = self.body['routing_configuration']
+            self.body['routing_configuration'] = dict(
+                associated_route_table=dict(
+                    id=routetable_id(
+                        self.subscription_id,
+                        self.resource_group,
+                        self.hub_name,
+                        routing_configuration['associated_route_table']
+                    )
+                ),
+                propagated_route_tables=dict(
+                    labels=routing_configuration['propagated_route_tables']['labels'],
+                    ids=[dict(
+                            id=routetable_id(
+                                self.subscription_id,
+                                self.resource_group,
+                                self.hub_name,
+                                item
+                            )
+                        ) for item in routing_configuration['propagated_route_tables']['ids']] if routing_configuration['propagated_route_tables']['ids'] else None
+                )
+            )
+
 
         if not old_response:
             if self.state == 'present':
@@ -652,6 +691,16 @@ def vnet_id(subscription_id, resource_group_name, virtual_network_name):
         subscription_id,
         resource_group_name,
         virtual_network_name
+    )
+
+def routetable_id(subscription_id, resource_group_name, virtual_hub_name, route_table_name):
+    """Generate the id for a virtual network"""
+    #"/subscriptions/04ae2105-744b-409d-89aa-c67c328de4ff/resourceGroups/rg-vwan-msssdmz/providers/Microsoft.Network/virtualHubs/MSSS-DMZ/hubRouteTables/defaultRouteTable"
+    return '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/virtualHubs/{2}/hubRouteTables/{3}'.format(
+        subscription_id,
+        resource_group_name,
+        virtual_hub_name,
+        route_table_name
     )
 
 def main():
