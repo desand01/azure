@@ -662,11 +662,13 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
             object_assign_original(old_response, self.parameters, 'backend_http_settings_collection', self.to_do)
             object_assign_original(old_response, self.parameters, 'http_listeners', self.to_do)
             object_assign_original(old_response, self.parameters, 'request_routing_rules', self.to_do)
+            object_assign_original(old_response, self.parameters, 'redirect_configurations', self.to_do)
             
             if (not compare_arrays(old_response, self.parameters, 'backend_address_pools', self.to_do) or
             not compare_arrays(old_response, self.parameters, 'probes', self.to_do) or
             not compare_arrays(old_response, self.parameters, 'backend_http_settings_collection', self.to_do) or
             not compare_arrays(old_response, self.parameters, 'request_routing_rules', self.to_do) or
+            not compare_arrays(old_response, self.parameters, 'redirect_configurations', self.to_do) or
             not compare_arrays(old_response, self.parameters, 'http_listeners', self.to_do)):
                 pass
             else:
@@ -896,7 +898,11 @@ def array_to_dict(array):
 def object_assign_original_port(new_params, old_params): #
     old = old_params.get('frontend_ports') or []
     newListeners = new_params.get('http_listeners') or []
-    frontend_ip_configuration = old_params.get('frontend_ip_configurations')[0]
+    for item in old_params.get('frontend_ip_configurations'):
+        frontend_ip_configuration = item
+        if 'public_ip_address' in frontend_ip_configuration:
+            break
+
     oldports = {}
     for item in old:
         oldports[item['port']] = item['id']
