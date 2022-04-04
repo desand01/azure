@@ -659,6 +659,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
             self.dict_assign_appgateway(self.parameters, old_response)
             #section host
             object_assign_original(old_response, self.parameters, 'backend_address_pools', self.to_do)
+            object_assign_original(old_response, self.parameters, 'probes', self.to_do)
             object_assign_original(old_response, self.parameters, 'backend_http_settings_collection', self.to_do)
             object_assign_original(old_response, self.parameters, 'http_listeners', self.to_do)
             object_assign_original(old_response, self.parameters, 'request_routing_rules', self.to_do)
