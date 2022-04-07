@@ -287,7 +287,13 @@ class AzureRMVirtualNetworkPeering(AzureRMModuleBase):
     def format_vnet_id(self, vnet):
         if not vnet:
             return vnet
-        if isinstance(vnet, dict) and vnet.get('name') and vnet.get('resource_group'):
+        if isinstance(vnet, dict) and vnet.get('name') and vnet.get('resource_group') and vnet.get('subscription_id'):
+            remote_vnet_id = format_resource_id(vnet['name'],
+                                                vnet['subscription_id'],
+                                                'Microsoft.Network',
+                                                'virtualNetworks',
+                                                vnet['resource_group'])
+        elif isinstance(vnet, dict) and vnet.get('name') and vnet.get('resource_group'):
             remote_vnet_id = format_resource_id(vnet['name'],
                                                 self.subscription_id,
                                                 'Microsoft.Network',
