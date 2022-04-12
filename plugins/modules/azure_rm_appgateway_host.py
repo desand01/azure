@@ -500,9 +500,9 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                     ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
-                        if 'redirect_type' in item:
+                        if 'redirect_type' in item and item['redirect_type']:
                             item['redirect_type'] = _snake_to_camel(item['redirect_type'], True)
-                        if 'target_listener' in item:
+                        if 'target_listener' in item and item['target_listener']:
                             id = http_listener_id(self.subscription_id,
                                                   kwargs['resource_group'],
                                                   kwargs['name'],
@@ -533,7 +533,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                     ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         item = ev[i]
-                        if 'protocol' in item:
+                        if 'protocol' in item and item['protocol']:
                             item['protocol'] = _snake_to_camel(item['protocol'], True)
                         if 'pick_host_name_from_backend_http_settings' in item and item['pick_host_name_from_backend_http_settings'] and 'host' in item:
                             del item['host']
