@@ -655,7 +655,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
 
         if (self.to_do == Actions.Update) or (self.to_do == Actions.Delete):
             if (self.to_do == Actions.Update):
-                object_assign_original_port(self.parameters, old_response)
+                self.object_assign_original_port(self.parameters, old_response)
             self.dict_assign_appgateway(self.parameters, old_response)
             #section host
             object_assign_original(old_response, self.parameters, 'backend_address_pools', self.to_do)
@@ -762,6 +762,49 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         for key in attribute_map:
             if not key in patch and key in origin:
                 patch[key] = origin[key]
+
+    def get_private_frontend_ports(self, old_params, private_ip_configuration_id):
+        private_ports = {}
+        old = old_params.get('frontend_ports') or []
+        oldListeners = old_params.get('http_listeners') or []
+        for port in old:
+            private_ports[port['port']] = False
+            for listener in oldListeners:
+                if port['id'] == listener['frontend_port']['id']:
+                    frontend_ip_configuration = listener['frontend_ip_configuration'] 
+                    private_ports[port['port']] = frontend_ip_configuration['id'] == private_ip_configuration_id
+                    break
+        return private_ports
+
+    def object_assign_original_port(self, new_params, old_params):
+        old = old_params.get('frontend_ports') or []
+        newListeners = new_params.get('http_listeners') or []
+        
+        frontend_ip_configuration = None
+        private_ip_configuration = None
+        private_ip_configuration_id = ''
+        for item in old_params.get('frontend_ip_configurations'):
+            if 'public_ip_address' in item:
+                frontend_ip_configuration = item
+            else:
+                private_ip_configuration = item
+                private_ip_configuration_id = item['id']
+        private_ports = self.get_private_frontend_ports(old_params, private_ip_configuration_id)
+        oldports = {}
+        for item in old:
+            oldports[item['port']] = item['id']
+
+        for item in newListeners:
+            port = item['frontend_port']
+            if not port in private_ports:
+                self.fail("Error creating host, port {0} must be configured for gateway : {1}".format(port, self.name))
+
+            if private_ports[port]:
+                item['frontend_ip_configuration'] = {'id': private_ip_configuration['id']}
+            else:
+                item['frontend_ip_configuration'] = {'id': frontend_ip_configuration['id']}
+            item['frontend_port'] = {'id': oldports[port]}
+        
 
 
 def public_ip_id(subscription_id, resource_group_name, name):
@@ -896,22 +939,7 @@ def array_to_dict(array):
                     new[index][nested] = array_to_dict(item[nested])
     return new
 
-def object_assign_original_port(new_params, old_params): #
-    old = old_params.get('frontend_ports') or []
-    newListeners = new_params.get('http_listeners') or []
-    for item in old_params.get('frontend_ip_configurations'):
-        frontend_ip_configuration = item
-        if 'public_ip_address' in frontend_ip_configuration:
-            break
 
-    oldports = {}
-    for item in old:
-        oldports[item['port']] = item['id']
-
-    for item in newListeners:
-        item['frontend_port'] = {'id': oldports[item['frontend_port']]}
-        item['frontend_ip_configuration'] = {'id': frontend_ip_configuration['id']}
-    
 
 
 def object_assign_original(old_params, new_params, param_name, to_do = Actions.Update, index_name = 'name'):
