@@ -303,8 +303,8 @@ class AzureRMContainerInstanceInfo(AzureRMModuleBaseEx):
         ports = d['ip_address']['ports'] if 'ip_address' in d else []
         resource_group = d['id'].split('resourceGroups/')[1].split('/')[0]
 
-        for port_index in range(len(ports)):
-            ports[port_index] = ports[port_index]['port']
+        #for port_index in range(len(ports)):
+        #    ports[port_index] = ports[port_index]['port']
 
         for container_index in range(len(containers)):
             old_container = containers[container_index]
@@ -320,6 +320,7 @@ class AzureRMContainerInstanceInfo(AzureRMModuleBaseEx):
             }
             for port_index in range(len(old_container['ports'])):
                 new_container['ports'].append(old_container['ports'][port_index]['port'])
+                ports.append(old_container['ports'][port_index])
             if 'volume_mounts' in old_container:
                 for volume_mount_index in range(len(old_container['volume_mounts'])):
                     new_container['volume_mounts'].append(old_container['volume_mounts'][volume_mount_index])
@@ -330,7 +331,7 @@ class AzureRMContainerInstanceInfo(AzureRMModuleBaseEx):
             'resource_group': resource_group,
             'name': d['name'],
             'os_type': d['os_type'],
-            'dns_name_label': d['ip_address'].get('dns_name_label'),
+            'dns_name_label': d['ip_address'].get('dns_name_label') if 'ip_address' in d else None,
             'ip_address': d['ip_address']['ip'] if 'ip_address' in d else '',
             'ports': ports,
             'location': d['location'],
