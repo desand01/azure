@@ -300,7 +300,7 @@ class AzureRMContainerInstanceInfo(AzureRMModuleBaseEx):
     def format_item(self, item):
         d = item.as_dict()
         containers = d['containers']
-        ports = d['ip_address']['ports'] if 'ip_address' in d else []
+        ports = []
         resource_group = d['id'].split('resourceGroups/')[1].split('/')[0]
 
         #for port_index in range(len(ports)):
