@@ -476,6 +476,7 @@ from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common
 from ansible.module_utils.common.dict_transformations import _snake_to_camel
 from ansible.module_utils._text import to_native
 import datetime
+import copy
 
 try:
     from msrestazure.azure_exceptions import CloudError
@@ -787,7 +788,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                 self.log("Container instance deleted")
             elif self.state == 'present':
                 self.log("Need to check if container group has to be deleted or may be updated")
-                oldtags = response.tags.as_dict() if response.tags else None
+                oldtags = copy.deepcopy(response.tags) if response.tags else None
                 update_tags, newtags = self.update_tags(oldtags)
                 if update_tags:
                     self.tags = newtags
@@ -1076,20 +1077,23 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                 properties = [properties]
             references = getattr(origin, attribute) if origin else []
             for item in properties:
-                if isinstance(item, self.cgmodels.Volume):
+                if isinstance(item, self.cgmodels.Volume) \
+                and references is not None:
                     propertie = item.azure_file
                     refs = [x for x in references if to_native(x.name) == item.name]
                     ref = refs[0] if len(refs) > 0 else None
                     ref.azure_file.storage_account_key  = propertie.storage_account_key if ref else None
                     continue
 
-                if isinstance(item, self.cgmodels.ImageRegistryCredential):
+                if isinstance(item, self.cgmodels.ImageRegistryCredential) \
+                and references is not None:
                     refs = [x for x in references if to_native(x.username) == item.username]
                     ref = refs[0] if len(refs) > 0 else None
                     ref.password = item.password if ref else None
                     continue
 
-                if isinstance(item, self.cgmodels.ContainerGroupDiagnostics):
+                if isinstance(item, self.cgmodels.ContainerGroupDiagnostics) \
+                and references is not None:
                     propertie = item.log_analytics
                     ref = references #[x for x in references if to_native(x.name) == item.name]
                     #ref = refs[0] if len(refs) > 0 else None
