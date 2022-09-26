@@ -1068,7 +1068,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         return changed
 
     def assign_keys(self, patch, origin):
-        attribute_map = ['volumes', 'image_registry_credentials', 'diagnostics']
+        attribute_map = ['volumes', 'image_registry_credentials', 'diagnostics','containers']
         for attribute in attribute_map:
             properties = getattr(patch, attribute)
             if not properties:
@@ -1098,6 +1098,23 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                     ref = references #[x for x in references if to_native(x.name) == item.name]
                     #ref = refs[0] if len(refs) > 0 else None
                     ref.log_analytics.workspace_key = propertie.workspace_key if ref else None
+                    continue
+                
+                if isinstance(item, self.cgmodels.Container) \
+                and references is not None \
+                and item.environment_variables is not None :
+                    refs = [x for x in references if to_native(x.name) == item.name]
+                    ref = refs[0] if len(refs) > 0 else None
+                    if ref is None: 
+                        continue
+                    #propertie = item.environment_variables
+                    envs = [x for x in item.environment_variables if x.secure_value]
+                    for env in envs:
+                        origines = [x for x in ref.environment_variables if to_native(x.name) == env.name]
+                        for origine in origines:
+                            origine.secure_value = env.secure_value
+                            origine.value = env.value
+                    #envs = [x for x in ref.environment_variables if x.secure_value]
                     continue
 
         return origin
