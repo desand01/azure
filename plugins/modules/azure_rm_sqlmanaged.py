@@ -299,7 +299,7 @@ class AzureRMSqlDatabase(AzureRMModuleBase):
                 type='datetime'
             ),
             restore_point_in_time=dict(
-                type='datetime'
+                type='str'
             ),
             recovery_services_recovery_point_resource_id=dict(
                 type='str'
