@@ -1,18 +1,18 @@
 #!/usr/bin/python
 #
-# Copyright (c) 2020 XiuxiSun, (@Fred-sun)
+# Copyright (c) 2022 xuzhang3 (@xuzhang3)
+#                    XiuxiSun, (@Fred-sun)
 #
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
-from email.policy import default
 __metaclass__ = type
 
 
 DOCUMENTATION = '''
 ---
-module: azure_rm_virtualhub
-version_added: '1.10.0'
+module: azure_rm_virtualhubconnection
+version_added: '1.14.0'
 short_description: Manage Azure VirtualHub instance
 description:
     - Create, update and delete instance of Azure VirtualHub.
@@ -24,172 +24,88 @@ options:
         type: str
     name:
         description:
-            - The name of the VirtualHub.
+            - The name of the VirtualHub connection.
         required: true
         type: str
-    virtual_wan:
+    vhub_name:
         description:
-            - The VirtualWAN to which the VirtualHub belongs.
-        type: dict
-        suboptions:
-            id:
-                description:
-                    - Resource ID.
-                type: str
-    vpn_gateway:
-        description:
-            - The VpnGateway associated with this VirtualHub.
-        type: dict
-        suboptions:
-            id:
-                description:
-                    - Resource ID.
-                type: str
-    p2_s_vpn_gateway:
-        description:
-            - The P2SVpnGateway associated with this VirtualHub.
-        type: dict
-        suboptions:
-            id:
-                description:
-                    - Resource ID.
-                type: str
-    express_route_gateway:
-        description:
-            - The expressRouteGateway associated with this VirtualHub.
-        type: dict
-        suboptions:
-            id:
-                description:
-                    - Resource ID.
-                type: str
-    azure_firewall:
-        description:
-            - The azureFirewall associated with this VirtualHub.
-        type: dict
-        suboptions:
-            id:
-                description:
-                    - Resource ID.
-                type: str
-    security_partner_provider:
-        description:
-            - The securityPartnerProvider associated with this VirtualHub.
-        type: dict
-        suboptions:
-            id:
-                description:
-                    - Resource ID.
-                type: str
-    address_prefix:
-        description:
-            - Address-prefix for this VirtualHub.
+            - The VirtualHub name.
         type: str
-    route_table:
+        required: True
+    enable_internet_security:
         description:
-            - The routeTable associated with this virtual hub.
-        type: dict
-        suboptions:
-            routes:
-                description:
-                    - List of all routes.
-                elements: dict
-                type: list
-                suboptions:
-                    address_prefixes:
-                        description:
-                            - List of all addressPrefixes.
-                        type: list
-                        elements: str
-                    next_hop_ip_address:
-                        description:
-                            - NextHop ip address.
-                        type: str
-    security_provider_name:
-        description:
-            - The Security Provider name.
-        type: str
-    virtual_hub_route_table_v2_s:
-        description:
-            - List of all virtual hub route table v2s associated with this VirtualHub.
-        type: list
-        elements: dict
-        suboptions:
-            name:
-                description:
-                    - The name of the resource that is unique within a resource group.
-                    - This name can be used to access the resource.
-                type: str
-            routes:
-                description:
-                    - List of all routes.
-                type: list
-                elements: dict
-                suboptions:
-                    destination_type:
-                        description:
-                            - The type of destinations.
-                        type: str
-                    destinations:
-                        description:
-                            - List of all destinations.
-                        type: list
-                        elements: str
-                    next_hop_type:
-                        description:
-                            - The type of next hops.
-                        type: str
-                    next_hops:
-                        description:
-                            - NextHops ip address.
-                        type: list
-                        elements: str
-            attached_connections:
-                description:
-                    - List of all connections attached to this route table v2.
-                elements: str
-                type: list
-    sku:
-        description:
-            - The sku of this VirtualHub.
-        type: str
-    bgp_connections:
-        description:
-            - List of references to Bgp Connections.
-        type: list
-        elements: dict
-        suboptions:
-            id:
-                description:
-                    - Resource ID.
-                type: str
-    ip_configurations:
-        description:
-            - List of references to IpConfigurations.
-        type: list
-        elements: dict
-        suboptions:
-            id:
-                description:
-                    - Resource ID.
-                type: str
-    virtual_router_asn:
-        description:
-            - VirtualRouter ASN.
-        type: int
-    virtual_router_ips:
-        description:
-            - VirtualRouter IPs.
-        type: list
-        elements: str
-    enable_virtual_router_route_propogation:
-        description:
-            - Flag to control route propogation for VirtualRouter hub.
+            - Enable internet security.
         type: bool
+    allow_remote_vnet_to_use_hub_vnet_gateways:
+        description:
+            - Allow RemoteVnet to use Virtual Hub's gateways.
+        type: bool
+    allow_hub_to_remote_vnet_transit:
+        description:
+            - VirtualHub to RemoteVnet transit to enabled or not.
+        type: bool
+    remote_virtual_network:
+        description:
+            - ID of the remote VNet to connect to.
+        type: dict
+        suboptions:
+            id:
+                description:
+                    - The remote virtual network ID.
+                type: str
+    routing_configuration:
+        description:
+            - The Routing Configuration indicating the associated and propagated route tables on this connection.
+        type: dict
+        suboptions:
+            propagated_route_tables:
+                description:
+                    - The list of RouteTables to advertise the routes to.
+                type: dict
+                suboptions:
+                    labels:
+                        description:
+                            - The list of labels.
+                        type: list
+                        elements: str
+                    ids:
+                        description:
+                            -The list of resource ids of all the virtual hub RouteTables.
+                        type: list
+                        elements: dict
+                        suboptions:
+                            id:
+                                description:
+                                    - The ID of the RouteTables.
+                                type: str
+            vnet_routes:
+                description:
+                    - List of routes that control routing from VirtualHub into a virtual network connection.
+                type: dict
+                suboptions:
+                    static_routes:
+                        description:
+                            - List of all Static Routes.
+                        type: list
+                        elements: dict
+                        suboptions:
+                            name:
+                                description:
+                                    - The name of the StaticRoute that is unique within a VnetRoute.
+                                type: str
+                            address_prefixes:
+                                description:
+                                    - List of all address prefixes.
+                                type: list
+                                elements: str
+                            next_hop_ip_address:
+                                description:
+                                    - The ip address of the next hop.
+                                type: str
     state:
         description:
-            - Assert the state of the VirtualHub.
-            - Use C(present) to create or update an VirtualHub and C(absent) to delete it.
+            - Assert the state of the VirtualHub connection.
+            - Use C(present) to create or update an VirtualHub connection and C(absent) to delete it.
         default: present
         type: str
         choices:
@@ -197,294 +113,185 @@ options:
             - present
 extends_documentation_fragment:
     - azure.azcollection.azure
-    - azure.azcollection.azure_tags
 author:
     - Fred-Sun (@Fred-Sun)
-    - Haiyuan Zhang (@haiyuazhang)
+    - Xu Zhang (@xuzhang3)
 
 '''
 
 EXAMPLES = '''
-    - name: Create a VirtualHub
-      azure_rm_virtualhub:
-        resource_group: myResourceGroup
-        name: my_virtual_hub_name
-        address_prefix: 10.2.0.0/24
-        sku: Standard
-        enable_virtual_router_route_propogation: false
-        virtual_wan:
-          id: /subscriptions/xxx-xxx/resourceGroups/myResourceGroup/providers/Microsoft.Network/virtualWans/fredwan
+- name: Create virtual hub connection
+  azure_rm_virtualhubconnection:
+    resource_group: myRG
+    vhub_name: testhub
+    name: Myconnection
+    enable_internet_security: false
+    allow_remote_vnet_to_use_hub_vnet_gateways: true
+    allow_hub_to_remote_vnet_transit: true
+    remote_virtual_network:
+      id: /subscriptions/xxx-xxx/resourceGroups/myRG/providers/Microsoft.Network/virtualNetworks/testvnet
+    routing_configuration:
+      propagated_route_tables:
+        labels:
+          - labels1
+          - labels3
+        ids:
+          - id: /subscriptions/xxx-xxx/resourceGroups/myRG/providers/Microsoft.Network/virtualHubs/testhub01/hubRouteTables/testtable
+      vnet_routes:
+        static_routes:
+          - name: route1
+            address_prefixes:
+              - 10.1.0.0/16
+              - 10.2.0.0/16
+            next_hop_ip_address: 10.0.0.68
+          - name: route2
+            address_prefixes:
+              - 10.4.0.0/16
+            next_hop_ip_address: 10.0.0.65
 
-    - name: Delete VirtualHub
-      azure_rm_virtualhub:
-        resource_group: myResourceGroup
-        name: my_virtual_hub_name
-        state: absent
+- name: Delete virtual hub connection
+  azure_rm_virtualhubconnection:
+    resource_group: myRG
+    vhub_name: testhub
+    name: Myconnection
+    state: absent
+
 '''
 
 RETURN = '''
 state:
     description:
-        - Current state of the virtual hub.
-    type: complex
+        - A list of dict results for the virtual hub connection info.
     returned: always
+    type: complex
     contains:
         id:
             description:
                 - Resource ID.
             returned: always
             type: str
-            sample: /subscriptions/xxx-xxx/resourceGroups/myResourceGroup/providers/Microsoft.Network/virtualHubs/my_virtual_hub_name
+            sample: /subscriptions/xxx-xxx/resourceGroups/myRG/providers/Microsoft.Network/virtualHubs/vhub/hubVirtualNetworkConnections/MyConnection
         name:
             description:
                 - Resource name.
             returned: always
             type: str
-            sample: my_virtual_hub_name
-        type:
-            description:
-                - Resource type.
-            returned: always
-            type: str
-            sample: Microsoft.Network/virtualHubs
-        tags:
-            description:
-                - Resource tags.
-            returned: always
-            type: dict
-            sample: { 'key1': 'value1' }
+            sample: MyConnection
         etag:
             description:
                 - A unique read-only string that changes whenever the resource is updated.
             returned: always
             type: str
-            sample: cf8c0b06-d339-4155-95fd-2a363945cce4
-        virtual_wan:
+            sample: 31102041-49e7-4cac-8573-aac1e1a16793
+        remote_virtual_network:
             description:
-                - The VirtualWAN to which the VirtualHub belongs.
+                - Name of ID of the remote VNet to connect to.
             returned: always
             type: complex
             contains:
                 id:
                     description:
-                        - Resource ID.
+                        - The ID of the remote VNet to connect to.
                     returned: always
                     type: str
-                    sample: /subscriptions/xxx-xxx/resourceGroups/myResourceGroup/providers/Microsoft.Network/virtualWans/fredwan
-        vpn_gateway:
+                    sample: /subscriptions/xxx-xxx/resourceGroups/myRG/providers/Microsoft.Network/virtualNetworks/testvnet
+        routing_configuration:
             description:
-                - The VpnGateway associated with this VirtualHub.
+                - The routing configuration information
             returned: always
             type: complex
             contains:
-                id:
+                associated_route_table:
                     description:
-                        - Resource ID.
+                        - The resource ID of route table associated with this routing configuration.
+                    type: complex
                     returned: always
-                    type: str
-                    sample: null
-        p2_s_vpn_gateway:
-            description:
-                - The P2SVpnGateway associated with this VirtualHub.
-            returned: always
-            type: complex
-            contains:
-                id:
-                    description:
-                        - Resource ID.
-                    returned: always
-                    type: str
-                    sample: null
-        express_route_gateway:
-            description:
-                - The expressRouteGateway associated with this VirtualHub.
-            returned: always
-            type: dict
-            sample: null
-            contains:
-                id:
-                    description:
-                        - Resource ID.
-                    returned: always
-                    type: str
-                    sample: null
-        azure_firewall:
-            description:
-                - The azureFirewall associated with this VirtualHub.
-            returned: always
-            type: complex
-            contains:
-                id:
-                    description:
-                        - Resource ID.
-                    returned: always
-                    type: str
-                    sample: null
-        security_partner_provider:
-            description:
-                - The securityPartnerProvider associated with this VirtualHub.
-            returned: always
-            type: complex
-            contains:
-                id:
-                    description:
-                        - Resource ID.
-                    returned: always
-                    type: str
-                    sample: null
-        address_prefix:
-            description:
-                - Address-prefix for this VirtualHub.
-            returned: always
-            type: str
-            sample: 10.2.0.0/24
-        route_table:
-            description:
-                - The routeTable associated with this virtual hub.
-            returned: always
-            type: complex
-            contains:
-                routes:
-                    description:
-                        - List of all routes.
-                    returned: always
-                    type: list
                     contains:
-                        address_prefixes:
+                        id:
                             description:
-                                - List of all addressPrefixes.
-                            returned: always
-                            type: list
-                            sample: null
-                        next_hop_ip_address:
-                            description:
-                                - NextHop ip address.
-                            returned: always
+                                - The ID of the routetable.
                             type: str
-                            sample: null
+                            returned: always
+                            sample: /subscriptions/xxx-xxx/resourceGroups/myRG/providers/Microsoft.Network/virtualHubs/testhub/hubRouteTables/rt_name
+                propagated_route_tables:
+                    description:
+                        - Space-separated list of resource id of propagated route tables.
+                    type: complex
+                    returned: always
+                    contains:
+                        ids:
+                            description:
+                                - The list resource ID of propagated route tables.
+                            type: list
+                            returned: always
+                            sample: [{ id: '/subscriptions/xxx-xxx/resourceGroups/myRG/providers/Microsoft.Network/virtualHubs/testhub/hubRouteTables/rt_name'}]
+                        labels:
+                            description:
+                                - Space-separated list of labels for propagated route tables.
+                            type: list
+                            returned: always
+                            sample: ['labels1', 'labels2']
+                vnet_routes:
+                    description:
+                        - The name of the Static Route that is unique within a Vnet Route.
+                    returned: always
+                    type: complex
+                    contains:
+                        static_routes:
+                            description:
+                                - The name of the Static Route.
+                            type: list
+                            returned: always
+                            contains:
+                                address_prefixes:
+                                    description:
+                                        - Space-separated list of all address prefixes.
+                                    type: list
+                                    returned: always
+                                    sample: ["10.1.0.0/16", "10.2.0.0/16"]
+                                name:
+                                    description:
+                                        - The name of static router.
+                                    type: str
+                                    returned: always
+                                    sample: route1
+                                next_hop_ip_address:
+                                    description:
+                                        - The next hop ip address.
+                                    type: str
+                                    returned: always
+                                    sample: 10.0.0.65
         provisioning_state:
             description:
-                - The provisioning state of the virtual hub resource.
+                - The provisioning state of the virtual hub connection resource.
             returned: always
             type: str
             sample: Succeeded
-        security_provider_name:
+        allow_hub_to_remote_vnet_transit:
             description:
-                - The Security Provider name.
-            returned: always
-            type: str
-            sample: null
-        virtual_hub_route_table_v2_s:
-            description:
-                - List of all virtual hub route table v2s associated with this VirtualHub.
-            returned: always
-            type: complex
-            contains:
-                name:
-                    description:
-                        - The name of the resource that is unique within a resource group.
-                        - This name can be used to access the resource.
-                    returned: always
-                    type: str
-                    sample: null
-                routes:
-                    description:
-                        - List of all routes.
-                    returned: always
-                    type: list
-                    contains:
-                        destination_type:
-                            description:
-                                - The type of destinations.
-                            returned: always
-                            type: str
-                            sample: null
-                        destinations:
-                            description:
-                                - List of all destinations.
-                            returned: always
-                            type: list
-                            sample: null
-                        next_hop_type:
-                            description:
-                                - The type of next hops.
-                            returned: always
-                            type: str
-                            sample: null
-                        next_hops:
-                            description:
-                                - NextHops ip address.
-                            returned: always
-                            type: list
-                            sample: null
-                attached_connections:
-                    description:
-                        - List of all connections attached to this route table v2.
-                    returned: always
-                    type: list
-                    sample: null
-        sku:
-            description:
-                - The sku of this VirtualHub.
-            returned: always
-            type: str
-            sample: null
-        routing_state:
-            description:
-                - The routing state.
-            returned: always
-            type: str
-            sample: Standard
-        bgp_connections:
-            description:
-                - List of references to Bgp Connections.
-            returned: always
-            type: list
-            contains:
-                id:
-                    description:
-                        - Resource ID.
-                    returned: always
-                    type: str
-                    sample: null
-        ip_configurations:
-            description:
-                - List of references to IpConfigurations.
-            returned: always
-            type: list
-            contains:
-                id:
-                    description:
-                        - Resource ID.
-                    returned: always
-                    type: str
-                    sample: null
-        virtual_router_asn:
-            description:
-                - VirtualRouter ASN.
-            returned: always
-            type: int
-            sample: null
-        virtual_router_ips:
-            description:
-                - VirtualRouter IPs.
-            returned: always
-            type: list
-            sample: null
-        enable_virtual_router_route_propogation:
-            description:
-                - Flag to control route propogation for VirtualRouter hub.
+                - Enable hub to remote VNet transit.
             returned: always
             type: bool
-            sample: null
-
+            sample: true
+        allow_remote_vnet_to_use_hub_vnet_gateways:
+            description:
+                - Allow remote VNet to use hub's VNet gateways.
+            returned: always
+            type: bool
+            sample: true
+        enable_internet_security:
+            description:
+                - Enable internet security and default is enabled.
+            type: bool
+            returned: always
+            sample: true
 '''
 
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common_ext import AzureRMModuleBaseExt
 try:
-    from msrestazure.azure_exceptions import CloudError
     from msrestazure.azure_operation import AzureOperationPoller
-    from msrest.polling import LROPoller
+    from azure.core.exceptions import ResourceNotFoundError
+    from azure.core.polling import LROPoller
 except ImportError:
     # This is handled in azure_rm_common
     pass
@@ -494,15 +301,12 @@ class Actions:
     NoAction, Create, Update, Delete = range(4)
 
 
-propagated_route_tables_spec = dict(
-    labels=dict(type='list', elements='str'),
-    ids=dict(type='list', elements='str'),
+static_routes_spec = dict(
+    name=dict(type='str'),
+    address_prefixes=dict(type='list', elements='str'),
+    next_hop_ip_address=dict(type='str')
 )
 
-routing_configuration_spec = dict(
-    associated_route_table=dict(type='str', required=True),
-    propagated_route_tables=dict(type='dict', options=propagated_route_tables_spec),
-)
 
 class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
     def __init__(self):
@@ -511,43 +315,63 @@ class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
                 type='str',
                 required=True
             ),
-            hub_name=dict(
+            vhub_name=dict(
                 type='str',
                 required=True
             ),
             name=dict(
-                type='str'
+                type='str',
+                required=True
+            ),
+            enable_internet_security=dict(
+                type='bool'
+            ),
+            allow_remote_vnet_to_use_hub_vnet_gateways=dict(
+                type='bool'
+            ),
+            allow_hub_to_remote_vnet_transit=dict(
+                type='bool'
             ),
             remote_virtual_network=dict(
                 type='dict',
                 options=dict(
-                    subscription_id=dict(
-                        type='str'
-                    ),
-                    resource_group=dict(
-                        type='str'
-                    ),
-                    name=dict(
+                    id=dict(
                         type='str',
-                        required=True
                     )
                 )
             ),
-            allow_hub_to_remote_vnet_transit=dict(
-                type='bool',
-                default=True
-            ),
-            allow_remote_vnet_to_use_hub_vnet_gateways=dict(
-                type='bool',
-                default=True
-            ),
-            enable_internet_security=dict(
-                type='bool',
-                default=False
-            ),
             routing_configuration=dict(
-                type='dict', 
-                options=routing_configuration_spec
+                type='dict',
+                options=dict(
+                    propagated_route_tables=dict(
+                        type='dict',
+                        options=dict(
+                            labels=dict(
+                                type='list',
+                                elements='str'
+                            ),
+                            ids=dict(
+                                type='list',
+                                elements='dict',
+                                options=dict(
+                                    id=dict(
+                                        type='str',
+                                    )
+                                )
+                            )
+                        )
+                    ),
+                    vnet_routes=dict(
+                        type='dict',
+                        options=dict(
+                            static_routes=dict(
+                                type='list',
+                                elements='dict',
+                                options=static_routes_spec
+                            )
+                        )
+                    )
+                )
             ),
             state=dict(
                 type='str',
@@ -557,7 +381,7 @@ class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
         )
 
         self.resource_group = None
-        self.hub_name = None
+        self.vhub_name = None
         self.name = None
         self.body = {}
 
@@ -566,8 +390,8 @@ class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
         self.to_do = Actions.NoAction
 
         super(AzureRMVirtualHubConnection, self).__init__(derived_arg_spec=self.module_arg_spec,
-                                                supports_check_mode=True,
-                                                supports_tags=True)
+                                                          supports_check_mode=True,
+                                                          supports_tags=False)
 
     def exec_module(self, **kwargs):
         for key in list(self.module_arg_spec.keys()):
@@ -578,46 +402,10 @@ class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
 
         self.inflate_parameters(self.module_arg_spec, self.body, 0)
 
-        #resource_group = self.get_resource_group(self.resource_group)
-
         old_response = None
         response = None
 
         old_response = self.get_resource()
-
-        if 'remote_virtual_network' in self.body:
-            self.body['remote_virtual_network'] = dict(
-                id=vnet_id(
-                    self.body['remote_virtual_network']['subscription_id'] or self.subscription_id,
-                    self.body['remote_virtual_network']['resource_group'] or self.resource_group,
-                    self.body['remote_virtual_network']['name']
-                )
-            )
-
-        if 'routing_configuration' in self.body:
-            routing_configuration = self.body['routing_configuration']
-            self.body['routing_configuration'] = dict(
-                associated_route_table=dict(
-                    id=routetable_id(
-                        self.subscription_id,
-                        self.resource_group,
-                        self.hub_name,
-                        routing_configuration['associated_route_table']
-                    )
-                ),
-                propagated_route_tables=dict(
-                    labels=routing_configuration['propagated_route_tables']['labels'],
-                    ids=[dict(
-                            id=routetable_id(
-                                self.subscription_id,
-                                self.resource_group,
-                                self.hub_name,
-                                item
-                            )
-                        ) for item in routing_configuration['propagated_route_tables']['ids']] if routing_configuration['propagated_route_tables']['ids'] else None
-                )
-            )
-
 
         if not old_response:
             if self.state == 'present':
@@ -626,12 +414,33 @@ class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
             if self.state == 'absent':
                 self.to_do = Actions.Delete
             else:
-                modifiers = {}
-                self.create_compare_modifiers(self.module_arg_spec, '', modifiers)
-                self.results['modifiers'] = modifiers
-                self.results['compare'] = []
-                if not self.default_compare(modifiers, self.body, old_response, '', self.results):
-                    self.to_do = Actions.Update
+                if self.body.get('enable_internet_security') is not None:
+                    if bool(self.body['enable_internet_security']) != bool(old_response['enable_internet_security']):
+                        self.to_do = Actions.Update
+                else:
+                    self.body['enable_internet_security'] = old_response['enable_internet_security']
+                if self.body.get('allow_remote_vnet_to_use_hub_vnet_gateways') is not None:
+                    if bool(self.body['allow_remote_vnet_to_use_hub_vnet_gateways']) != bool(old_response['allow_remote_vnet_to_use_hub_vnet_gateways']):
+                        self.to_do = Actions.Update
+                else:
+                    self.body['allow_remote_vnet_to_use_hub_vnet_gateways'] = old_response['allow_remote_vnet_to_use_hub_vnet_gateways']
+                if self.body.get('allow_hub_to_remote_vnet_transit') is not None:
+                    if bool(self.body['allow_hub_to_remote_vnet_transit']) != bool(old_response['allow_hub_to_remote_vnet_transit']):
+                        self.to_do = Actions.Update
+                else:
+                    self.body['allow_hub_to_remote_vnet_transit'] = old_response['allow_hub_to_remote_vnet_transit']
+
+                if self.body.get('routing_configuration') is not None:
+                    modifiers = {}
+                    self.create_compare_modifiers(self.module_arg_spec, '', modifiers)
+                    self.results['modifiers'] = modifiers
+                    self.results['compare'] = []
+                    if not self.default_compare(modifiers, self.body['routing_configuration'], old_response['routing_configuration'], '', self.results):
+                        self.to_do = Actions.Update
+                    else:
+                        self.body['routing_configuration'] = old_response['routing_configuration']
+                else:
+                    self.body['routing_configuration'] = old_response['routing_configuration']
 
         if (self.to_do == Actions.Create) or (self.to_do == Actions.Update):
             self.results['changed'] = True
@@ -654,54 +463,37 @@ class AzureRMVirtualHubConnection(AzureRMModuleBaseExt):
 
     def create_update_resource(self):
         try:
-            response = self.network_client.hub_virtual_network_connections.create_or_update(resource_group_name=self.resource_group,
-                                                                         virtual_hub_name=self.hub_name,
-                                                                         connection_name=self.name,
-                                                                         hub_virtual_network_connection_parameters=self.body)
+            response = self.network_client.hub_virtual_network_connections.begin_create_or_update(resource_group_name=self.resource_group,
+                                                                                                  virtual_hub_name=self.vhub_name,
+                                                                                                  connection_name=self.name,
+                                                                                                  hub_virtual_network_connection_parameters=self.body)
             if isinstance(response, AzureOperationPoller) or isinstance(response, LROPoller):
                 response = self.get_poller_result(response)
-        except CloudError as exc:
+        except Exception as exc:
             self.log('Error attempting to create the VirtualHub instance.')
             self.fail('Error creating the VirtualHub instance: {0}'.format(str(exc)))
         return response.as_dict()
 
     def delete_resource(self):
         try:
-            response = self.network_client.hub_virtual_network_connections.delete(resource_group_name=self.resource_group,
-                                                                                    virtual_hub_name=self.hub_name,
-                                                                                    connection_name=self.name)
-        except CloudError as e:
-            self.log('Error attempting to delete the VirtualHub instance.')
-            self.fail('Error deleting the VirtualHub instance: {0}'.format(str(e)))
+            response = self.network_client.hub_virtual_network_connections.begin_delete(resource_group_name=self.resource_group,
+                                                                                        virtual_hub_name=self.vhub_name,
+                                                                                        connection_name=self.name)
+        except Exception as e:
+            self.log('Error attempting to delete the VirtualHub connection instance.')
+            self.fail('Error deleting the VirtualHub connection instance: {0}'.format(str(e)))
 
         return True
 
     def get_resource(self):
         try:
             response = self.network_client.hub_virtual_network_connections.get(resource_group_name=self.resource_group,
-                                                                                virtual_hub_name=self.hub_name,
-                                                                                connection_name=self.name)
-        except CloudError as e:
+                                                                               virtual_hub_name=self.vhub_name,
+                                                                               connection_name=self.name)
+        except ResourceNotFoundError as e:
             return False
         return response.as_dict()
 
-def vnet_id(subscription_id, resource_group_name, virtual_network_name):
-    """Generate the id for a virtual network"""
-    return '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/virtualNetworks/{2}'.format(
-        subscription_id,
-        resource_group_name,
-        virtual_network_name
-    )
-
-def routetable_id(subscription_id, resource_group_name, virtual_hub_name, route_table_name):
-    """Generate the id for a virtual network"""
-    #"/subscriptions/04ae2105-744b-409d-89aa-c67c328de4ff/resourceGroups/rg-vwan-msssdmz/providers/Microsoft.Network/virtualHubs/MSSS-DMZ/hubRouteTables/defaultRouteTable"
-    return '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/virtualHubs/{2}/hubRouteTables/{3}'.format(
-        subscription_id,
-        resource_group_name,
-        virtual_hub_name,
-        route_table_name
-    )
 
 def main():
     AzureRMVirtualHubConnection()

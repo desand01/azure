@@ -31,6 +31,8 @@ options:
     tags:
         description:
             - Limit results by providing a list of tags. Format tags as 'key' or 'key:value'.
+        type: list
+        elements: str
 
 extends_documentation_fragment:
     - azure.azcollection.azure
@@ -246,7 +248,7 @@ securitygroups:
 '''  # NOQA
 
 try:
-    from msrestazure.azure_exceptions import CloudError
+    from azure.core.exceptions import ResourceNotFoundError
 except Exception:
     # This is handled in azure_rm_common
     pass
@@ -318,7 +320,7 @@ class AzureRMSecurityGroupInfo(AzureRMModuleBase):
         self.module_arg_spec = dict(
             name=dict(type='str'),
             resource_group=dict(required=True, type='str'),
-            tags=dict(type='list'),
+            tags=dict(type='list', elements='str'),
         )
 
         self.results = dict(
@@ -363,7 +365,7 @@ class AzureRMSecurityGroupInfo(AzureRMModuleBase):
 
         try:
             item = self.network_client.network_security_groups.get(self.resource_group, self.name)
-        except CloudError:
+        except ResourceNotFoundError:
             pass
 
         if item and self.has_tags(item.tags, self.tags):

@@ -6,7 +6,6 @@ __metaclass__ = type
 
 DOCUMENTATION = r'''
     name: azure_rm
-    plugin_type: inventory
     short_description: Azure Resource Manager inventory plugin
     extends_documentation_fragment:
       - azure.azcollection.azure
@@ -100,6 +99,8 @@ keyed_groups:
 exclude_host_filters:
 # excludes hosts in the eastus region
 - location in ['eastus']
+- tags['tagkey'] is defined and tags['tagkey'] == 'tagkey'
+- tags['tagkey2'] is defined and tags['tagkey2'] == 'tagkey2'
 # excludes hosts that are powered off
 - powerstate != 'running'
 '''
@@ -112,6 +113,7 @@ import hashlib
 import json
 import re
 import uuid
+import os
 
 try:
     from queue import Queue, Empty
@@ -267,8 +269,12 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         self._enqueue_get(url=url, api_version=self._compute_api_version, handler=self._on_vmss_page_response)
 
     def _get_hosts(self):
-        for vm_rg in self.get_option('include_vm_resource_groups'):
-            self._enqueue_vm_list(vm_rg)
+        if os.environ.get('ANSIBLE_AZURE_VM_RESOURCE_GROUPS'):
+            for vm_rg in os.environ['ANSIBLE_AZURE_VM_RESOURCE_GROUPS'].split(","):
+                self._enqueue_vm_list(vm_rg)
+        else:
+            for vm_rg in self.get_option('include_vm_resource_groups'):
+                self._enqueue_vm_list(vm_rg)
 
         for vmss_rg in self.get_option('include_vmss_resource_groups'):
             self._enqueue_vmss_list(vmss_rg)
@@ -521,6 +527,11 @@ class AzureHost(object):
             av_zone = self._vm_model['zones']
 
         new_hostvars = dict(
+            network_interface=[],
+            mac_address=[],
+            network_interface_id=[],
+            security_group_id=[],
+            security_group=[],
             public_ipv4_addresses=[],
             public_dns_hostnames=[],
             private_ipv4_addresses=[],
@@ -565,12 +576,12 @@ class AzureHost(object):
                     if pip_fqdn:
                         new_hostvars['public_dns_hostnames'].append(pip_fqdn)
 
-            new_hostvars['mac_address'] = nic._nic_model['properties'].get('macAddress')
-            new_hostvars['network_interface'] = nic._nic_model['name']
-            new_hostvars['network_interface_id'] = nic._nic_model['id']
-            new_hostvars['security_group_id'] = nic._nic_model['properties']['networkSecurityGroup']['id'] \
+            new_hostvars['mac_address'].append(nic._nic_model['properties'].get('macAddress'))
+            new_hostvars['network_interface'].append(nic._nic_model['name'])
+            new_hostvars['network_interface_id'].append(nic._nic_model['id'])
+            new_hostvars['security_group_id'].append(nic._nic_model['properties']['networkSecurityGroup']['id']) \
                 if nic._nic_model['properties'].get('networkSecurityGroup') else None
-            new_hostvars['security_group'] = parse_resource_id(new_hostvars['security_group_id'])['resource_name'] \
+            new_hostvars['security_group'].append(parse_resource_id(nic._nic_model['properties']['networkSecurityGroup']['id'])['resource_name']) \
                 if nic._nic_model['properties'].get('networkSecurityGroup') else None
 
         # set image and os_disk

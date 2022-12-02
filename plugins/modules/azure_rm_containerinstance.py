@@ -479,11 +479,9 @@ import datetime
 import copy
 
 try:
-    from msrestazure.azure_exceptions import CloudError
-    #from msrest.polling import LROPoller
+    from azure.core.exceptions import ResourceNotFoundError
     from azure.core.polling import LROPoller
     from azure.core.exceptions import HttpResponseError
-    from azure.mgmt.containerinstance import ContainerInstanceManagementClient
 except ImportError:
     # This is handled in azure_rm_common
     pass
@@ -1191,7 +1189,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         try:
             response = self.containerinstance_client.container_groups.begin_delete(resource_group_name=self.resource_group, container_group_name=self.name)
             return True
-        except (CloudError, HttpResponseError) as exc:
+        except Exception as exc:
             self.fail('Error when deleting ACI {0}: {1}'.format(self.name, exc.message or str(exc)))
             return False
 
