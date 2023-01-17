@@ -29,12 +29,12 @@ options:
         type: str
     tags:
         description:
-            - Limit the results by providing resource tags.
-        type: dict
+            - Limit results by providing a list of tags. Format tags as 'key' or 'key:value'.
+        type: list
+        elements: str
 
 extends_documentation_fragment:
     - azure.azcollection.azure
-    - azure.azcollection.azure_tags
 
 author:
     - Aparna Patil (@aparna-patil)
@@ -80,8 +80,7 @@ hostgroups:
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
 
 try:
-    from msrestazure.azure_exceptions import CloudError
-    from azure.common import AzureMissingResourceHttpError, AzureHttpError
+    from azure.core.exceptions import ResourceNotFoundError
 except Exception:
     # This is handled in azure_rm_common
     pass
@@ -97,7 +96,7 @@ class AzureRMHostGroupInfo(AzureRMModuleBase):
         self.module_arg_spec = dict(
             name=dict(type='str'),
             resource_group=dict(type='str'),
-            tags=dict(type='dict')
+            tags=dict(type='list', elements='str')
         )
 
         # store the results of the module operation
@@ -109,7 +108,7 @@ class AzureRMHostGroupInfo(AzureRMModuleBase):
         self.resource_group = None
         self.tags = None
 
-        super(AzureRMHostGroupInfo, self).__init__(self.module_arg_spec, supports_check_mode=True, supports_tags=True)
+        super(AzureRMHostGroupInfo, self).__init__(self.module_arg_spec, supports_check_mode=True, supports_tags=False, facts_module=True)
 
     def exec_module(self, **kwargs):
 
@@ -139,7 +138,7 @@ class AzureRMHostGroupInfo(AzureRMModuleBase):
         # get specific host group
         try:
             item = self.compute_client.dedicated_host_groups.get(self.resource_group, self.name)
-        except CloudError:
+        except ResourceNotFoundError:
             pass
 
         # serialize result
@@ -151,7 +150,7 @@ class AzureRMHostGroupInfo(AzureRMModuleBase):
         self.log('List all host groups for resource group - {0}'.format(self.resource_group))
         try:
             response = self.compute_client.dedicated_host_groups.list_by_resource_group(self.resource_group)
-        except AzureHttpError as exc:
+        except ResourceNotFoundError as exc:
             self.fail("Failed to list for resource group {0} - {1}".format(self.resource_group, str(exc)))
 
         results = []
@@ -164,7 +163,7 @@ class AzureRMHostGroupInfo(AzureRMModuleBase):
         self.log('List all host groups for a subscription ')
         try:
             response = self.compute_client.dedicated_host_groups.list_by_subscription()
-        except AzureHttpError as exc:
+        except ResourceNotFoundError as exc:
             self.fail("Failed to list all items - {0}".format(str(exc)))
 
         results = []

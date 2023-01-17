@@ -51,7 +51,8 @@ gateways:
     description:
         - A list of dictionaries containing facts for an application gateway.
     returned: always
-    type: complex
+    type: list
+    elements: dict
     contains:
         id:
             description:
@@ -89,14 +90,33 @@ gateways:
             returned: always
             type: str
             sample: Succeeded
+        ssl_policy:
+            description:
+                - SSL policy of the application gateway.
+            returned: always
+            type: complex
+            version_added: "1.11.0"
+            contains:
+                policy_type:
+                    description:
+                        - The type of SSL policy.
+                    returned: always
+                    type: str
+                    sample: predefined
+                policy_name:
+                    description:
+                        - The name of the SSL policy.
+                    returned: always
+                    type: str
+                    sample: ssl_policy20170401_s
 '''
 
 import re
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
+from ansible.module_utils.common.dict_transformations import _camel_to_snake
 
 try:
-    from msrestazure.azure_exceptions import CloudError
-    from azure.mgmt.network import NetworkManagementClient
+    from azure.core.exceptions import ResourceNotFoundError
     from msrestazure.tools import parse_resource_id
 except ImportError:
     # This is handled in azure_rm_common
@@ -118,7 +138,6 @@ class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
 
         self.name = None
         self.resource_group = None
-        self.mgmt_client = None
 
         super(AzureRMApplicationGatewayInfo, self).__init__(self.module_arg_spec,
                                                             supports_check_mode=True,
@@ -128,9 +147,6 @@ class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
     def exec_module(self, **kwargs):
         for key in self.module_arg_spec:
             setattr(self, key, kwargs[key])
-
-        self.mgmt_client = self.get_mgmt_svc_client(NetworkManagementClient,
-                                                    base_url=self._cloud_environment.endpoints.resource_manager)
 
         if self.name is not None:
             self.results["gateways"] = self.get()
@@ -145,8 +161,8 @@ class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
         response = None
         results = []
         try:
-            response = self.mgmt_client.application_gateways.get(resource_group_name=self.resource_group, application_gateway_name=self.name)
-        except CloudError:
+            response = self.network_client.application_gateways.get(resource_group_name=self.resource_group, application_gateway_name=self.name)
+        except ResourceNotFoundError:
             pass
 
         if response is not None:
@@ -158,9 +174,8 @@ class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
         response = None
         results = []
         try:
-            response = self.mgmt_client.application_gateways.list(resource_group_name=self.resource_group)
-
-        except CloudError as exc:
+            response = self.network_client.application_gateways.list(resource_group_name=self.resource_group)
+        except Exception as exc:
             request_id = exc.request_id if exc.request_id else ''
             self.fail("Error listing application gateways in resource groups {0}: {1} - {2}".format(self.resource_group, request_id, str(exc)))
 
@@ -173,8 +188,8 @@ class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
         response = None
         results = []
         try:
-            response = self.mgmt_client.application_gateways.list_all()
-        except CloudError as exc:
+            response = self.network_client.application_gateways.list_all()
+        except Exception as exc:
             request_id = exc.request_id if exc.request_id else ''
             self.fail("Error listing all application gateways: {0} - {1}".format(request_id, str(exc)))
 
@@ -195,9 +210,22 @@ class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
             "operational_state": d.get("operational_state"),
             "provisioning_state": d.get("provisioning_state"),
             "private_ip_address": self.get_private_ip(appgw),
-            "public_ip_address": self.get_public_ip(appgw)
+            "public_ip_address": self.get_public_ip(appgw),
+            "ssl_policy": None if d.get("ssl_policy") is None else {
+                "policy_type": _camel_to_snake(d.get("ssl_policy").get("policy_type", None)),
+                "policy_name": self.ssl_policy_name(d.get("ssl_policy").get("policy_name", None)),
+            },
         }
         return d
+
+    def ssl_policy_name(self, policy_name):
+        if policy_name == "AppGwSslPolicy20150501":
+            return "ssl_policy20150501"
+        elif policy_name == "AppGwSslPolicy20170401":
+            return "ssl_policy20170401"
+        elif policy_name == "AppGwSslPolicy20170401S":
+            return "ssl_policy20170401_s"
+        return None
 
     def get_private_ip(self, response):
         self.log('Get private ip for {0}'.format(self.name))
@@ -223,7 +251,7 @@ class AzureRMApplicationGatewayInfo(AzureRMModuleBase):
                 if id:
                     item = self.network_client.public_ip_addresses.get(resource_group, id)
                     return item.ip_address
-            except CloudError:
+            except Exception:
                 pass
         return None
 

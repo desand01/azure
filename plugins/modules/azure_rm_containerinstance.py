@@ -479,11 +479,9 @@ import datetime
 import copy
 
 try:
-    from msrestazure.azure_exceptions import CloudError
-    #from msrest.polling import LROPoller
+    from azure.core.exceptions import ResourceNotFoundError
     from azure.core.polling import LROPoller
     from azure.core.exceptions import HttpResponseError
-    from azure.mgmt.containerinstance import ContainerInstanceManagementClient
 except ImportError:
     # This is handled in azure_rm_common
     pass
@@ -857,7 +855,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             terminal.execute(self.terminal['lines'])
             self.results['console'] = terminal.console
 
-        except (CloudError, HttpResponseError) as exc:
+        except Exception as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
         finally:
             if terminal is not None:
@@ -872,7 +870,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             else:
                 self.results['state']['stop'] = 'Skip'
             
-        except (CloudError, HttpResponseError) as exc:
+        except Exception as exc:
             self.fail("Error when stoping containers group {0}: {1}".format(self.name, exc.message or str(exc)))
 
     def restart_containerinstance(self, response):
@@ -890,7 +888,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                     return 'time-out'
             self.results['state'][state_name] = poller.status()
             return poller.status()
-        except (CloudError, HttpResponseError) as exc:
+        except Exception as exc:
             self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
 
     def normalize_group_container_def(self):
@@ -1165,7 +1163,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                     if response.done():
                         response = response.result()
                         return response.as_dict()
-        except (CloudError, HttpResponseError) as exc:
+        except Exception as exc:
             self.fail("Error when creating ACI {0}: {1}".format(self.name, exc.message or str(exc)))
 
         return None
@@ -1191,7 +1189,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
         try:
             response = self.containerinstance_client.container_groups.begin_delete(resource_group_name=self.resource_group, container_group_name=self.name)
             return True
-        except (CloudError, HttpResponseError) as exc:
+        except Exception as exc:
             self.fail('Error when deleting ACI {0}: {1}'.format(self.name, exc.message or str(exc)))
             return False
 
@@ -1213,7 +1211,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
                 self.log('Did not find the container instance.')
             else:
                 raise e
-        except CloudError as e:
+        except Exception as e:
             self.log('Did not find the container instance.')
         if found is True:
             return response

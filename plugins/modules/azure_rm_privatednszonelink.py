@@ -161,8 +161,8 @@ from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common
 from ansible.module_utils.common._json_compat import json
 
 try:
-    from msrestazure.azure_exceptions import CloudError
-    from msrest.polling import LROPoller
+    from azure.core.exceptions import ResourceNotFoundError
+    from azure.core.polling import LROPoller
 except ImportError:
     # This is handled in azure_rm_common
     pass
@@ -258,7 +258,7 @@ class AzureRMVirtualNetworkLink(AzureRMModuleBase):
             elif self.state == 'absent':
                 changed = True
 
-        except CloudError:
+        except ResourceNotFoundError:
             if self.state == 'present':
                 changed = True
             else:
@@ -294,10 +294,10 @@ class AzureRMVirtualNetworkLink(AzureRMModuleBase):
         try:
             # create the virtual network link
             response = \
-                self.private_dns_client.virtual_network_links.create_or_update(resource_group_name=self.resource_group,
-                                                                               private_zone_name=self.zone_name,
-                                                                               virtual_network_link_name=self.name,
-                                                                               parameters=virtual_network_link)
+                self.private_dns_client.virtual_network_links.begin_create_or_update(resource_group_name=self.resource_group,
+                                                                                     private_zone_name=self.zone_name,
+                                                                                     virtual_network_link_name=self.name,
+                                                                                     parameters=virtual_network_link)
             if isinstance(response, LROPoller):
                 response = self.get_poller_result(response)
         except Exception as exc:
@@ -307,9 +307,9 @@ class AzureRMVirtualNetworkLink(AzureRMModuleBase):
     def delete_network_link(self):
         try:
             # delete the virtual network link
-            response = self.private_dns_client.virtual_network_links.delete(resource_group_name=self.resource_group,
-                                                                            private_zone_name=self.zone_name,
-                                                                            virtual_network_link_name=self.name)
+            response = self.private_dns_client.virtual_network_links.begin_delete(resource_group_name=self.resource_group,
+                                                                                  private_zone_name=self.zone_name,
+                                                                                  virtual_network_link_name=self.name)
             if isinstance(response, LROPoller):
                 response = self.get_poller_result(response)
         except Exception as exc:
