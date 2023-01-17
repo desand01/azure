@@ -74,7 +74,7 @@ from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common
 try:
     from msrestazure.azure_exceptions import CloudError
     from msrestazure.azure_operation import AzureOperationPoller
-    from msrest.polling import LROPoller
+    from azure.core.polling import LROPoller
 except ImportError:
     # This is handled in azure_rm_common
     pass
@@ -252,7 +252,7 @@ class AzureRMAzureFirewallpolicy(AzureRMModuleBaseExt):
         try:
             self.inflate_parameters(self.module_arg_spec, self.body, 1)
             self.validate_priorities()
-            response = self.network_client.firewall_policy_rule_collection_groups.create_or_update(resource_group_name=self.resource_group,
+            response = self.network_client.firewall_policy_rule_collection_groups.begin_create_or_update(resource_group_name=self.resource_group,
                                                                          firewall_policy_name=self.firewall_policy_name,
                                                                          rule_collection_group_name=self.name,
                                                                          parameters=self.body)
@@ -265,7 +265,7 @@ class AzureRMAzureFirewallpolicy(AzureRMModuleBaseExt):
 
     def delete_resource(self):
         try:
-            response = self.network_client.firewall_policy_rule_collection_groups.delete(resource_group_name=self.resource_group,
+            response = self.network_client.firewall_policy_rule_collection_groups.begin_delete(resource_group_name=self.resource_group,
                                                                                     firewall_policy_name=self.firewall_policy_name,
                                                                                     rule_collection_group_name=self.name)
         except CloudError as e:

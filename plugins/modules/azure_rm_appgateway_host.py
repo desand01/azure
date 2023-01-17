@@ -139,6 +139,20 @@ options:
                 choices:
                     - 'enabled'
                     - 'disabled'
+            connection_draining:
+                version_added: "1.14.0"
+                description:
+                    - Connection draining of the backend http settings resource.
+                type: dict
+                suboptions:
+                    drain_timeout_in_sec:
+                        description:
+                            - The number of seconds connection draining is active. Acceptable values are from 1 second to 3600 seconds.
+                        type: int
+                    enabled:
+                        description:
+                            - Whether connection draining is enabled or not.
+                        type: bool
             request_timeout:
                 description:
                     - Request timeout in seconds.
@@ -270,6 +284,9 @@ EXAMPLES = '''
       - port: 80
         protocol: http
         cookie_based_affinity: enabled
+        connection_draining:
+            drain_timeout_in_sec: 60
+            enabled: true
         name: sample_appgateway_http_settings
     http_listeners:
       - frontend_ip_configuration: sample_gateway_frontend_ip_config
@@ -392,7 +409,7 @@ from ansible.module_utils.common.dict_transformations import (
 
 try:
     from msrestazure.azure_exceptions import CloudError
-    from msrest.polling import LROPoller
+    from azure.core.polling import LROPoller
     from azure.mgmt.network import NetworkManagementClient
     from msrest.serialization import Model
 except ImportError:
@@ -489,7 +506,6 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
 
     def exec_module(self, **kwargs):
         """Main module execution method"""
-
         for key in list(self.module_arg_spec.keys()) + ['tags']:
             if hasattr(self, key):
                 setattr(self, key, kwargs[key])
@@ -617,7 +633,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                                                  kwargs['resource_group'],
                                                  kwargs['name'],
                                                  item['url_path_map'])
-                            item['url_path_map'] = {'id': id}
+                            item['url_path_map'] = {'id': id}                            
                         ev[i] = item
                     self.parameters["request_routing_rules"] = ev
                 elif key == "etag":
@@ -627,7 +643,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         response = None
 
         self.mgmt_client = self.get_mgmt_svc_client(NetworkManagementClient,
-                                                    base_url=self._cloud_environment.endpoints.resource_manager)
+                                                    base_url=self._cloud_environment.endpoints.resource_manager,
+                                                    is_track2=True)
 
         self.cgmodels = self.mgmt_client.application_gateways.models 
 
@@ -656,6 +673,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         if (self.to_do == Actions.Update) or (self.to_do == Actions.Delete):
             if (self.to_do == Actions.Update):
                 self.object_assign_original_port(self.parameters, old_response)
+                self.object_assign_rule_priority(self.parameters, old_response)
+
             self.dict_assign_appgateway(self.parameters, old_response)
             #section host
             object_assign_original(old_response, self.parameters, 'backend_address_pools', self.to_do)
@@ -709,7 +728,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         self.log("Creating / Updating the Application Gateway instance {0}".format(self.name))
 
         try:
-            response = self.mgmt_client.application_gateways.create_or_update(resource_group_name=self.resource_group,
+            response = self.mgmt_client.application_gateways.begin_create_or_update(resource_group_name=self.resource_group,
                                                                               application_gateway_name=self.name,
                                                                               parameters=self.parameters)
             if isinstance(response, LROPoller):
@@ -728,7 +747,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         '''
         self.log("Deleting the Application Gateway instance {0}".format(self.name))
         try:
-            response = self.mgmt_client.application_gateways.delete(resource_group_name=self.resource_group,
+            response = self.mgmt_client.application_gateways.begin_delete(resource_group_name=self.resource_group,
                                                                     application_gateway_name=self.name)
         except CloudError as e:
             self.log('Error attempting to delete the Application Gateway instance.')
@@ -805,6 +824,29 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 item['frontend_ip_configuration'] = {'id': frontend_ip_configuration['id']}
             item['frontend_port'] = {'id': oldports[port]}
         
+    def object_assign_rule_priority(self, new_params, old_params):
+        old_rules = old_params.get('request_routing_rules') or []
+        new_rules = new_params.get('request_routing_rules') or []
+        indexed_rules = {}
+        rule_priority = -1
+
+        for item in new_rules:
+            indexed_rules[item['name']] = item
+        #Priority must be unique across all the request routing rules
+        for item in old_rules:
+            if 'priority' in item:
+                rule_priority = max(int(item['priority']), rule_priority)
+                if item['name'] in indexed_rules:
+                    new_item = indexed_rules[item['name']]
+                    if not 'priority' in new_item:
+                        new_item['priority'] = rule_priority
+
+        if rule_priority > 0:
+            rule_priority += 10
+            for item in new_rules:
+                if not 'priority' in item:
+                    item['priority'] = rule_priority
+                    rule_priority += 1
 
 
 def public_ip_id(subscription_id, resource_group_name, name):
