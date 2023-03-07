@@ -2025,8 +2025,18 @@ class AzureRMTerminal(object):
     def _ws_thread(self, *args):
         import websocket
         try:
+            #websocket.enableTrace(True)
             self._websocket = websocket.WebSocketApp(self._exec_info['uri'], on_open = self._ws_open, on_message = self._ws_message, on_error = self._ws_error)
-            self._websocket.run_forever()
+            http_proxy_port = None
+            proxy_type = None
+            http_proxy = os.getenv('http_proxy')
+            if not http_proxy is None:
+                x = re.search(r"(?:http://)?([^:]+):?(\d+)", http_proxy)
+                http_proxy = x.group(1)
+                http_proxy_port = x.group(2)
+                proxy_type = 'http'
+            http_no_proxy = os.getenv('no_proxy')
+            self._websocket.run_forever(http_proxy_host = http_proxy, http_proxy_port = http_proxy_port, http_no_proxy = http_no_proxy, proxy_type = proxy_type)
         except Exception as exc:
             self._on_error_exception = exc
 

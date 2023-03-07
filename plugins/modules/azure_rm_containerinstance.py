@@ -856,7 +856,7 @@ class AzureRMContainerInstance(AzureRMModuleBaseEx):
             self.results['console'] = terminal.console
 
         except Exception as exc:
-            self.fail("Error when restarting containers group {0}: {1}".format(self.name, exc.message or str(exc)))
+            self.fail("Error when executing terminal in containers group {0}: {1}".format(self.name, str(exc)))
         finally:
             if terminal is not None:
                 terminal.close()
