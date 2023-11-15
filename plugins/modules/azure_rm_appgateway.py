@@ -1788,7 +1788,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                         else:
                             del item['path_rules']
                     self.parameters["redirect_configurations"] = ev
-                elif key == "frontend_ip_configurations":
+                elif key == "rewrite_rule_sets":
                     ev = deepcopy(kwargs[key])
                     for i in range(len(ev)):
                         ev2 = ev[i]['rewrite_rules']

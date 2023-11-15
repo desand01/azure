@@ -444,7 +444,7 @@ try:
 except ImportError:
     # This is handled in azure_rm_common
     pass
-
+import json
 
 def create_aks_dict(aks):
     '''
@@ -574,7 +574,10 @@ def create_addon_profiles_spec():
         )
         configs = values.get('config') or {}
         for item in configs.keys():
-            addon_spec[item] = dict(type='str', aliases=[configs[item]], required=True)
+            if isinstance(configs[item], dict):
+                addon_spec[item] = dict(type='str', aliases=[configs[item]['name']], required=configs[item]['required'])
+            else:
+                addon_spec[item] = dict(type='str', aliases=[configs[item]], required=True)
         spec[key] = dict(type='dict', options=addon_spec, aliases=[values['name']])
     return spec
 
@@ -582,7 +585,21 @@ def create_addon_profiles_spec():
 ADDONS = {
     'http_application_routing': dict(name='httpApplicationRouting'),
     'monitoring': dict(name='omsagent', config={'log_analytics_workspace_resource_id': 'logAnalyticsWorkspaceResourceID'}),
-    'virtual_node': dict(name='aciConnector', config={'subnet_resource_id': 'SubnetName'})
+    'virtual_node': dict(name='aciConnector', config={'subnet_resource_id': 'SubnetName'}),
+    'ingress_application_gateway': dict(name='ingressApplicationGateway', 
+                                        config={
+                                            'application_gateway_name': 'applicationGatewayName',
+                                            #'effective_application_gateway_id': 'effectiveApplicationGatewayId',
+                                            'subnet_cidr': dict(
+                                                name='subnetCIDR',
+                                                required=False
+                                            ),
+                                            'subnet_id': dict(
+                                                name='subnetId',
+                                                required=False
+                                            )
+                                        }
+                                    )
 }
 
 
@@ -840,7 +857,11 @@ class AzureRMManagedCluster(AzureRMModuleBase):
                             return False
                         config = config or dict()
                         for key in config.keys():
-                            if origin.get(config[key]) != patch.get(key):
+                            if isinstance(config[key], dict):
+                                config_name = config[key]["name"]
+                            else:
+                                config_name = config[key]
+                            if origin.get(config_name) != patch.get(key):
                                 return False
                         return True
 
@@ -1008,7 +1029,7 @@ class AzureRMManagedCluster(AzureRMModuleBase):
             return create_aks_dict(response)
         except Exception as exc:
             self.log('Error attempting to create the AKS instance.')
-            self.fail("Error creating the AKS instance: {0}".format(exc.message))
+            self.fail("Error creating the AKS instance: {0}".format(exc.message or str(exc)))
 
     def update_aks_tags(self):
         try:
@@ -1016,7 +1037,7 @@ class AzureRMManagedCluster(AzureRMModuleBase):
             response = self.get_poller_result(poller)
             return response.tags
         except Exception as exc:
-            self.fail("Error attempting to update AKS tags: {0}".format(exc.message))
+            self.fail("Error attempting to update AKS tags: {0}".format(exc.message or str(exc)))
 
     def create_update_agentpool(self, to_update_name_list):
         response_all = []
@@ -1041,7 +1062,7 @@ class AzureRMManagedCluster(AzureRMModuleBase):
                     response = self.get_poller_result(poller)
                     response_all.append(response)
                 except Exception as exc:
-                    self.fail("Error attempting to update AKS agentpool: {0}".format(exc.message))
+                    self.fail("Error attempting to update AKS agentpool: {0}".format(exc.message or str(exc)))
         return create_agent_pool_profiles_dict(response_all)
 
     def delete_agentpool(self, to_delete_name_list):
@@ -1051,7 +1072,7 @@ class AzureRMManagedCluster(AzureRMModuleBase):
                 poller = self.managedcluster_client.agent_pools.begin_delete(self.resource_group, self.name, name)
                 self.get_poller_result(poller)
             except Exception as exc:
-                self.fail("Error attempting to update AKS agentpool: {0}".format(exc.message))
+                self.fail("Error attempting to update AKS agentpool: {0}".format(exc.message or str(exc)))
 
     def delete_aks(self):
         '''
@@ -1159,7 +1180,15 @@ class AzureRMManagedCluster(AzureRMModuleBase):
                 config_spec = ADDONS[key].get('config') or dict()
                 config = addon[key]
                 for v in config_spec.keys():
-                    config[config_spec[v]] = config[v]
+                    value = None
+                    if isinstance(config_spec[v], dict):
+                        config_name = config_spec[v]['name']
+                    else:
+                        config_name = config_spec[v]
+                    value = config[v]
+                    if value:
+                        config[config_name] = value
+                    config.pop(v)
                 result[name] = self.managedcluster_models.ManagedClusterAddonProfile(config=config, enabled=config['enabled'])
         return result
 
