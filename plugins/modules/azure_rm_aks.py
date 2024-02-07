@@ -901,8 +901,11 @@ class AzureRMManagedCluster(AzureRMModuleBase):
                                     self.fail("The availability_zones of the agent pool cannot be updated")
 
                                 if count is not None and profile_result['count'] != count:
-                                    self.log(("Agent Profile Diff - Origin {0} / Update {1}".format(str(profile_result), str(profile_self))))
-                                    to_be_updated = True
+                                    if profile_result['count'] < count:
+                                        self.log(("Agent Profile Diff - Origin {0} / Update {1}".format(str(profile_result), str(profile_self))))
+                                        to_be_updated = True
+                                    else:
+                                        profile_self['count'] = profile_result['count']
                                 elif vm_size is not None and profile_result['vm_size'] != vm_size:
                                     self.log(("Agent Profile Diff - Origin {0} / Update {1}".format(str(profile_result), str(profile_self))))
                                     to_be_updated = True
