@@ -215,10 +215,11 @@ from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common
 
 try:
     from msrestazure.azure_exceptions import CloudError
-    from msrest.polling import LROPoller
+    from azure.core.polling import LROPoller
     from azure.mgmt.sql import SqlManagementClient
     from azure.mgmt.sql.models import Sku
     from msrest.serialization import Model
+    from azure.core.exceptions import ResourceNotFoundError
 except ImportError:
     # This is handled in azure_rm_common
     pass
@@ -492,14 +493,14 @@ class AzureRMSqlDatabase(AzureRMModuleBase):
             "Creating / Updating the SQL Database instance {0}".format(self.name))
 
         try:
-            response = self.sql_client.managed_databases.create_or_update(resource_group_name=self.resource_group,
+            response = self.sql_client.managed_databases.begin_create_or_update(resource_group_name=self.resource_group,
                                                                   managed_instance_name=self.instance_name,
                                                                   database_name=self.name,
                                                                   parameters=self.parameters)
             if isinstance(response, LROPoller):
                 response = self.get_poller_result(response)
 
-        except CloudError as exc:
+        except Exception as exc:
             self.log('Error attempting to create the SQL Database instance.')
             self.fail(
                 "Error creating the SQL Database instance: {0}".format(str(exc)))
@@ -513,10 +514,10 @@ class AzureRMSqlDatabase(AzureRMModuleBase):
         '''
         self.log("Deleting the SQL Database instance {0}".format(self.name))
         try:
-            response = self.sql_client.managed_databases.delete(resource_group_name=self.resource_group,
+            response = self.sql_client.managed_databases.begin_delete(resource_group_name=self.resource_group,
                                                         managed_instance_name=self.instance_name,
                                                         database_name=self.name)
-        except CloudError as e:
+        except Exception as e:
             self.log('Error attempting to delete the SQL Database instance.')
             self.fail(
                 "Error deleting the SQL Database instance: {0}".format(str(e)))
@@ -539,7 +540,7 @@ class AzureRMSqlDatabase(AzureRMModuleBase):
             found = True
             self.log("Response : {0}".format(response))
             self.log("SQL Database instance : {0} found".format(response.name))
-        except CloudError as e:
+        except ResourceNotFoundError as e:
             self.log('Did not find the SQL Database instance.')
         if found is True:
             return response.as_dict()
