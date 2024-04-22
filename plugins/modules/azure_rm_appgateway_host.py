@@ -420,6 +420,11 @@ except ImportError:
 class Actions:
     NoAction, Create, Update, Delete = range(4)
 
+probe_match_spec = dict(
+    statusCodes=dict(type='list', elements='str'),
+    body=dict(type='str')
+)
+
 
 probe_spec = dict(
     host=dict(type='str'),
@@ -430,7 +435,8 @@ probe_spec = dict(
     protocol=dict(type='str', choices=['http', 'https']),
     timeout=dict(type='int'),
     unhealthy_threshold=dict(type='int'),
-    pick_host_name_from_backend_http_settings=dict(type='bool', default=False)
+    pick_host_name_from_backend_http_settings=dict(type='bool', default=False),
+    match=dict(type='dict', options=probe_match_spec)
 )
 
 
