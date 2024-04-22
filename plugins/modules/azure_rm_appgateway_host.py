@@ -423,6 +423,7 @@ class Actions:
 
 probe_spec = dict(
     host=dict(type='str'),
+    port=dict(type='int'),
     interval=dict(type='int'),
     name=dict(type='str'),
     path=dict(type='str'),
