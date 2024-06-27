@@ -640,7 +640,13 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                                                  kwargs['resource_group'],
                                                  kwargs['name'],
                                                  item['url_path_map'])
-                            item['url_path_map'] = {'id': id}                            
+                            item['url_path_map'] = {'id': id}
+                        if 'rewrite_rule_set' in item:
+                            id = rewrite_rule_set_id(self.subscription_id,
+                                                    kwargs['resource_group'],
+                                                    kwargs['name'],
+                                                    item['rewrite_rule_set'])
+                            item['rewrite_rule_set'] = {'id': id}                        
                         ev[i] = item
                     self.parameters["request_routing_rules"] = ev
                 elif key == "etag":
@@ -961,6 +967,15 @@ def subnet_id(subscription_id, resource_group_name, virtual_network_name, name):
         subscription_id,
         resource_group_name,
         virtual_network_name,
+        name
+    )
+
+def rewrite_rule_set_id(subscription_id, resource_group_name, appgateway_name, name):
+    """Generate the id for a rewrite rule set in an application gateway"""
+    return '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/applicationGateways/{2}/rewriteRuleSets/{3}'.format(
+        subscription_id,
+        resource_group_name,
+        appgateway_name,
         name
     )
 
