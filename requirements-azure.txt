@@ -4,6 +4,7 @@ xmltodict
 websocket-client
 docker-compose
 netaddr
+microsoft-kiota-authentication-azure==1.0.0
 azure-cli-core==2.34.0
 azure-common==1.1.11
 azure-identity==1.7.0
