@@ -322,6 +322,8 @@ class AzureRMPrivateEndpoint(AzureRMModuleBaseExt):
             item['private_link_service_id']=self.service_id(item.get('private_link_service_id'))
         return item
     def service_id(self, name):
+        if name.startswith('/subscriptions/'):
+            return name
         return '/subscriptions/{0}/resourceGroups/{1}/providers/{2}'.format(
             self.subscription_id,
             self.resource_group,
