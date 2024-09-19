@@ -793,7 +793,7 @@ class AzureRMStorageAccount(AzureRMModuleBase):
             self.storage_client.storage_accounts.check_name_availability(account_name)
         except Exception as e:
             self.log('Error attempting to validate name.')
-            self.fail("Error checking name availability: {0}".format(str(e)))
+            #self.fail("Error checking name availability: {0}".format(str(e)))
 
     def get_account(self):
         self.log('Get properties for account {0}'.format(self.name))
