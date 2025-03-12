@@ -602,6 +602,16 @@ import copy
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AZURE_SUCCESS_STATE, AzureRMModuleBase
 from ansible.module_utils._text import to_native
 
+encryption_user_assigned_identity_spec = dict(
+    encryption_user_assigned_identity=dict(type='str', required=True),
+)
+
+key_vault_properties_spec = dict(
+    key_vault_uri=dict(type='str', required=True),
+    key_name=dict(type='str', required=True),
+    key_version=dict(type='str', required=False),
+)
+
 cors_rule_spec = dict(
     allowed_origins=dict(type='list', elements='str', required=True),
     allowed_methods=dict(type='list', elements='str', required=True),
@@ -685,6 +695,8 @@ class AzureRMStorageAccount(AzureRMModuleBase):
             encryption=dict(
                 type='dict',
                 options=dict(
+                    encryption_identity=dict(type='dict', options=encryption_user_assigned_identity_spec),
+                    key_vault_properties=dict(type='dict', options=key_vault_properties_spec),
                     services=dict(
                         type='dict',
                         options=dict(
@@ -902,6 +914,24 @@ class AzureRMStorageAccount(AzureRMModuleBase):
             if account_obj.encryption:
                 account_dict['encryption']['require_infrastructure_encryption'] = account_obj.encryption.require_infrastructure_encryption
                 account_dict['encryption']['key_source'] = account_obj.encryption.key_source
+                account_dict['encryption']['encryption_identity'] = dict(
+                    encryption_user_assigned_identity=''
+                )
+                if account_obj.encryption.encryption_identity and account_obj.encryption.encryption_identity.encryption_user_assigned_identity:
+                    account_dict['encryption']['encryption_identity']['encryption_user_assigned_identity'] = account_obj.encryption.encryption_identity.encryption_user_assigned_identity
+                
+                account_dict['encryption']['key_vault_properties'] = dict(
+                    key_name='',
+                    key_vault_uri='',
+                    key_version=''
+                )
+                if account_obj.encryption.key_vault_properties:
+                    account_dict['encryption']['key_vault_properties'] = dict(
+                        key_name=account_obj.encryption.key_vault_properties.key_name,
+                        key_vault_uri=account_obj.encryption.key_vault_properties.key_vault_uri,
+                        key_version=account_obj.encryption.key_vault_properties.key_version
+                    )
+
                 if account_obj.encryption.services:
                     account_dict['encryption']['services'] = dict()
                     if account_obj.encryption.services.file:
@@ -1097,9 +1127,6 @@ class AzureRMStorageAccount(AzureRMModuleBase):
                     != bool(self.account_dict['encryption']['require_infrastructure_encryption']):
                 encryption_changed = True
 
-            if self.encryption.get('key_source') != self.account_dict['encryption']['key_source']:
-                encryption_changed = True
-
             if self.encryption.get('services') is not None:
                 if self.encryption.get('queue') is not None and self.account_dict['encryption']['services'].get('queue') is not None:
                     encryption_changed = True
@@ -1109,9 +1136,41 @@ class AzureRMStorageAccount(AzureRMModuleBase):
                     encryption_changed = True
                 if self.encryption.get('blob') is not None and self.account_dict['encryption']['services'].get('blob') is not None:
                     encryption_changed = True
-
+                
             if encryption_changed and not self.check_mode:
                 self.fail("The encryption can't update encryption, encryption info as {0}".format(self.account_dict['encryption']))
+            
+            if self.encryption.get('key_source') != self.account_dict['encryption']['key_source']:
+                encryption_changed = True
+
+            if self.encryption.get('encryption_identity') is not None:
+                if self.encryption.get('encryption_identity').get('encryption_user_assigned_identity') != self.account_dict['encryption']['encryption_identity']['encryption_user_assigned_identity']:
+                    encryption_changed = True
+
+            if self.encryption.get('key_vault_properties') is not None:
+                if self.encryption.get('key_vault_properties').get('key_name') != self.account_dict['encryption']['key_vault_properties']['key_name']:
+                    encryption_changed = True
+                if self.encryption.get('key_vault_properties').get('key_version') != self.account_dict['encryption']['key_vault_properties']['key_version'] \
+                and self.account_dict['encryption']['key_vault_properties']['key_version']:
+                    encryption_changed = True
+                if self.encryption.get('key_vault_properties').get('key_vault_uri') != self.account_dict['encryption']['key_vault_properties']['key_vault_uri']:
+                    encryption_changed = True
+            if encryption_changed:
+                identity = dict(
+                    type='UserAssigned',
+                    user_assigned_identities = {
+                        "/subscriptions/365d9d22-7ff0-493b-bfc2-a84d96181714/resourceGroups/az99-rg-default/providers/Microsoft.ManagedIdentity/userAssignedIdentities/az99-id-mghp-kvenc": {
+                            "tenant_id": "06e1fe28-5f8b-4075-bf6c-ae24be1a7992"
+                        }
+                    }
+                )
+                
+                parameters = self.storage_models.StorageAccountUpdateParameters(identity=identity, encryption=self.encryption)
+                try:
+                    self.storage_client.storage_accounts.update(self.resource_group, self.name, parameters)
+                except Exception as exc:
+                    self.fail("Failed to update encryption: {0}".format(str(exc)))
+
 
     def create_account(self):
         self.log("Creating account {0}".format(self.name))
