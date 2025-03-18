@@ -599,8 +599,15 @@ state:
 
 
 import copy
-from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AZURE_SUCCESS_STATE, AzureRMModuleBase
+from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AZURE_SUCCESS_STATE
+from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common_ext import AzureRMModuleBaseExt
 from ansible.module_utils._text import to_native
+
+try:
+    from azure.mgmt.storage.models import (Identity, UserAssignedIdentity)
+except ImportError:
+    # This is handled in azure_rm_common
+    pass
 
 encryption_user_assigned_identity_spec = dict(
     encryption_user_assigned_identity=dict(type='str', required=True),
@@ -666,7 +673,7 @@ def compare_cors(cors1, cors2):
     return True
 
 
-class AzureRMStorageAccount(AzureRMModuleBase):
+class AzureRMStorageAccount(AzureRMModuleBaseExt):
 
     def __init__(self):
 
@@ -721,6 +728,10 @@ class AzureRMStorageAccount(AzureRMModuleBase):
                     require_infrastructure_encryption=dict(type='bool'),
                     key_source=dict(type='str', choices=["Microsoft.Storage", "Microsoft.Keyvault"], default='Microsoft.Storage')
                 )
+            ),
+            identity=dict(
+                type="dict",
+                options=self.managed_identity_single_spec
             )
         )
 
@@ -749,10 +760,22 @@ class AzureRMStorageAccount(AzureRMModuleBase):
         self.static_website = None
         self.encryption = None
         self.is_hns_enabled = None
+        self._managed_identity = None
+        self.identity = None
+        self.update_identity = False
 
         super(AzureRMStorageAccount, self).__init__(self.module_arg_spec,
                                                     supports_check_mode=True)
 
+    @property
+    def managed_identity(self):
+        if not self._managed_identity:
+            self._managed_identity = {
+                "identity": Identity,
+                "user_assigned": UserAssignedIdentity,
+            }
+        return self._managed_identity
+    
     def exec_module(self, **kwargs):
 
         for key in list(self.module_arg_spec.keys()) + ['tags']:
@@ -776,6 +799,14 @@ class AzureRMStorageAccount(AzureRMModuleBase):
         if self.kind in ['FileStorage', 'BlockBlobStorage', ] and self.account_type not in ['Premium_LRS', 'Premium_ZRS']:
             self.fail("Parameter error: Storage account with {0} kind require account type is Premium_LRS or Premium_ZRS".format(self.kind))
         self.account_dict = self.get_account()
+
+        curr_identity = self.account_dict["identity"] if self.account_dict else None
+
+        if self.identity:
+            self.update_identity, identity_result = self.update_single_managed_identity(curr_identity=curr_identity,
+                                                                                        new_identity=self.identity,
+                                                                                        patch_support=True)
+            self.identity = identity_result.as_dict()
 
         if self.state == 'present' and self.account_dict and \
            self.account_dict['provisioning_state'] != AZURE_SUCCESS_STATE:
@@ -942,6 +973,9 @@ class AzureRMStorageAccount(AzureRMModuleBase):
                         account_dict['encryption']['services']['queue'] = dict(enabled=True)
                     if account_obj.encryption.services.blob:
                         account_dict['encryption']['services']['blob'] = dict(enabled=True)
+            account_dict['identity'] = dict()
+            if account_obj.identity:
+                account_dict['identity'] = account_obj.identity.as_dict()
 
         return account_dict
 
@@ -1089,6 +1123,14 @@ class AzureRMStorageAccount(AzureRMModuleBase):
                 except Exception as exc:
                     self.fail("Failed to update custom domain: {0}".format(str(exc)))
 
+        if self.update_identity:
+            self.results['changed'] = True
+            parameters = self.storage_models.StorageAccountUpdateParameters(identity=self.identity)
+            try:
+                self.storage_client.storage_accounts.update(self.resource_group, self.name, parameters)
+            except Exception as exc:
+                self.fail("Failed to update access tier: {0}".format(str(exc)))
+
         if self.access_tier:
             if not self.account_dict['access_tier'] or self.account_dict['access_tier'] != self.access_tier:
                 self.results['changed'] = True
@@ -1156,16 +1198,8 @@ class AzureRMStorageAccount(AzureRMModuleBase):
                 if self.encryption.get('key_vault_properties').get('key_vault_uri') != self.account_dict['encryption']['key_vault_properties']['key_vault_uri']:
                     encryption_changed = True
             if encryption_changed:
-                identity = dict(
-                    type='UserAssigned',
-                    user_assigned_identities = {
-                        "/subscriptions/365d9d22-7ff0-493b-bfc2-a84d96181714/resourceGroups/az99-rg-default/providers/Microsoft.ManagedIdentity/userAssignedIdentities/az99-id-mghp-kvenc": {
-                            "tenant_id": "06e1fe28-5f8b-4075-bf6c-ae24be1a7992"
-                        }
-                    }
-                )
                 
-                parameters = self.storage_models.StorageAccountUpdateParameters(identity=identity, encryption=self.encryption)
+                parameters = self.storage_models.StorageAccountUpdateParameters(encryption=self.encryption)
                 try:
                     self.storage_client.storage_accounts.update(self.resource_group, self.name, parameters)
                 except Exception as exc:
@@ -1199,6 +1233,7 @@ class AzureRMStorageAccount(AzureRMModuleBase):
                 allow_blob_public_access=self.allow_blob_public_access,
                 encryption=self.encryption,
                 is_hns_enabled=self.is_hns_enabled,
+                identity=self.identity,
                 tags=dict()
             )
             if self.tags:
@@ -1218,6 +1253,7 @@ class AzureRMStorageAccount(AzureRMModuleBase):
                                                                         kind=self.kind,
                                                                         location=self.location,
                                                                         tags=self.tags,
+                                                                        identity=self.identity,
                                                                         enable_https_traffic_only=self.https_only,
                                                                         minimum_tls_version=self.minimum_tls_version,
                                                                         public_network_access=self.public_network_access,
