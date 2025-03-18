@@ -717,6 +717,16 @@ class AzureRMStorageAccountInfo(AzureRMModuleBase):
                     account_dict['encryption']['services']['queue'] = dict(enabled=True)
                 if account_obj.encryption.services.blob:
                     account_dict['encryption']['services']['blob'] = dict(enabled=True)
+            if account_obj.encryption.encryption_identity and account_obj.encryption.encryption_identity.encryption_user_assigned_identity:
+                account_dict['encryption']['encryption_identity'] = {}
+                account_dict['encryption']['encryption_identity']['encryption_user_assigned_identity'] = account_obj.encryption.encryption_identity.encryption_user_assigned_identity
+            if account_obj.encryption.key_vault_properties and account_obj.encryption.encryption_identity.encryption_user_assigned_identity:
+                account_dict['encryption']['key_vault_properties'] = {}
+                account_dict['encryption']['key_vault_properties']['key_name'] = account_obj.encryption.key_vault_properties.key_name
+                account_dict['encryption']['key_vault_properties']['key_vault_uri'] = account_obj.encryption.key_vault_properties.key_vault_uri
+                account_dict['encryption']['key_vault_properties']['key_version'] = account_obj.encryption.key_vault_properties.key_version
+                account_dict['encryption']['key_vault_properties']['current_versioned_key_identifier'] = account_obj.encryption.key_vault_properties.current_versioned_key_identifier
+                
         return account_dict
 
     def format_endpoint_dict(self, name, key, endpoint, storagetype, protocol='https'):
