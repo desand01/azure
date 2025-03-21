@@ -102,7 +102,7 @@ AZURE_API_PROFILES = {
             virtual_machine_run_commands='2018-10-01'
         ),
         'ManagementGroupsClient': '2020-05-01',
-        'NetworkManagementClient': '2019-11-01',
+        'NetworkManagementClient': '2020-05-01',
         'ResourceManagementClient': '2017-05-10',
         'SearchManagementClient': '2020-08-01',
         'StorageManagementClient': '2021-06-01',
@@ -1085,12 +1085,12 @@ class AzureRMModuleBase(object):
             self._subscription_client = self.get_mgmt_svc_client(SubscriptionClient,
                                                                  base_url=self._cloud_environment.endpoints.resource_manager,
                                                                  suppress_subscription_id=True,
-                                                                 api_version='2019-11-01')
+                                                                 api_version='2020-05-01')
         return self._subscription_client
 
     @property
     def subscription_models(self):
-        return SubscriptionClient.models("2019-11-01")
+        return SubscriptionClient.models("2020-05-01")
 
     @property
     def management_groups_client(self):

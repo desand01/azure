@@ -399,7 +399,7 @@ id:
     sample: id
 '''
 
-import time
+import json
 from ansible_collections.azure.azcollection.plugins.module_utils.azure_rm_common import AzureRMModuleBase
 from copy import deepcopy
 from ansible.module_utils.common.dict_transformations import (
@@ -421,7 +421,7 @@ class Actions:
     NoAction, Create, Update, Delete = range(4)
 
 probe_match_spec = dict(
-    statusCodes=dict(type='list', elements='str'),
+    statusCodes=dict(type='list', elements='str', aliases=['status_codes']),
     body=dict(type='str')
 )
 
@@ -689,6 +689,16 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 self.object_assign_rule_priority(self.parameters, old_response)
 
             self.dict_assign_appgateway(self.parameters, old_response)
+            self.dict_assign_attribut(self.parameters, old_response, 'identity')
+            self.dict_assign_attribut(self.parameters, old_response, 'ssl_policy')
+            self.dict_assign_attribut(self.parameters, old_response, 'firewall_policy')
+            object_assign_original(old_response, self.parameters, 'gateway_ip_configurations', Actions.Update)
+            object_assign_original(old_response, self.parameters, 'trusted_root_certificates', Actions.Update)
+            object_assign_original(old_response, self.parameters, 'ssl_certificates', Actions.Update)
+            object_assign_original(old_response, self.parameters, 'frontend_ip_configurations', Actions.Update)
+            object_assign_original(old_response, self.parameters, 'frontend_ports', Actions.Update)
+            object_assign_original(old_response, self.parameters, 'private_endpoint_connections', Actions.Update)
+            
             #section host
             object_assign_original(old_response, self.parameters, 'backend_address_pools', self.to_do)
             object_assign_original(old_response, self.parameters, 'probes', self.to_do)
@@ -714,7 +724,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 self.results['changed'] = True
                 self.results["parameters"] = self.parameters
                 return self.results
-
+            #self.toto('avant.json', old_response)
+            #self.toto('apres.json', self.parameters)
             response = self.create_update_applicationgateway()
 
             if not old_response:
@@ -731,6 +742,11 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
             self.results["id"] = response["id"]
 
         return self.results
+
+    def toto(self, nomfile, obj):
+        pretty_json = json.dumps(obj, sort_keys=True, indent=4)
+        with open('/tmp/manifest/' + nomfile, 'w') as f:
+            f.write(pretty_json)
 
     def create_update_applicationgateway(self):
         '''
@@ -795,6 +811,10 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
             if not key in patch and key in origin:
                 patch[key] = origin[key]
 
+    def dict_assign_attribut(self, patch, origin, name):
+        if name in origin:
+            patch[name] = origin[name]
+
     def get_private_frontend_ports(self, old_params, private_ip_configuration_id):
         private_ports = {}
         old = old_params.get('frontend_ports') or []
@@ -814,27 +834,23 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
         
         frontend_ip_configuration = None
         private_ip_configuration = None
-        private_ip_configuration_id = ''
         for item in old_params.get('frontend_ip_configurations'):
             if 'public_ip_address' in item:
                 frontend_ip_configuration = item
             else:
                 private_ip_configuration = item
-                private_ip_configuration_id = item['id']
-        private_ports = self.get_private_frontend_ports(old_params, private_ip_configuration_id)
+
         oldports = {}
         for item in old:
             oldports[item['port']] = item['id']
 
         for item in newListeners:
+            frontend_ip = item.get('frontend_ip_configuration') or 'public'
             port = item['frontend_port']
-            if not port in private_ports:
-                self.fail("Error creating host, port {0} must be configured for gateway : {1}".format(port, self.name))
-
-            if private_ports[port]:
-                item['frontend_ip_configuration'] = {'id': private_ip_configuration['id']}
-            else:
+            if frontend_ip == "public":
                 item['frontend_ip_configuration'] = {'id': frontend_ip_configuration['id']}
+            else:
+                item['frontend_ip_configuration'] = {'id': private_ip_configuration['id']}
             item['frontend_port'] = {'id': oldports[port]}
         
     def object_assign_rule_priority(self, new_params, old_params):
