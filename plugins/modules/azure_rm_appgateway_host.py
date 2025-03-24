@@ -421,7 +421,7 @@ class Actions:
     NoAction, Create, Update, Delete = range(4)
 
 probe_match_spec = dict(
-    statusCodes=dict(type='list', elements='str', aliases=['status_codes']),
+    status_codes=dict(type='list', elements='str', aliases=['statusCodes']),
     body=dict(type='str')
 )
 
@@ -560,6 +560,10 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                             item['protocol'] = _snake_to_camel(item['protocol'], True)
                         if 'pick_host_name_from_backend_http_settings' in item and item['pick_host_name_from_backend_http_settings'] and 'host' in item:
                             del item['host']
+                        if 'port' in item and item['port'] is None:
+                            del item['port']
+                        if 'match' in item and 'body' in item['match'] and item['match']['body'] is None:
+                            del item['match']['body']
                     self.parameters["probes"] = ev
                 elif key == "backend_http_settings_collection":
                     ev = deepcopy(kwargs[key])
@@ -567,6 +571,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                         item = ev[i]
                         if 'port' in item and type(item['port']) != int:
                             item['port'] = int(item['port'])
+                        if 'request_timeout' in item and type(item['request_timeout']) != int:
+                            item['request_timeout'] = int(item['request_timeout'])
                         if 'protocol' in item:
                             item['protocol'] = _snake_to_camel(item['protocol'], True)
                         if 'cookie_based_affinity' in item:
@@ -724,8 +730,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                 self.results['changed'] = True
                 self.results["parameters"] = self.parameters
                 return self.results
-            #self.toto('avant.json', old_response)
-            #self.toto('apres.json', self.parameters)
+            #toto('avant.json', old_response)
+            #toto('apres.json', self.parameters)
             response = self.create_update_applicationgateway()
 
             if not old_response:
@@ -742,11 +748,6 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
             self.results["id"] = response["id"]
 
         return self.results
-
-    def toto(self, nomfile, obj):
-        pretty_json = json.dumps(obj, sort_keys=True, indent=4)
-        with open('/tmp/manifest/' + nomfile, 'w') as f:
-            f.write(pretty_json)
 
     def create_update_applicationgateway(self):
         '''
@@ -995,6 +996,10 @@ def rewrite_rule_set_id(subscription_id, resource_group_name, appgateway_name, n
         name
     )
 
+def toto(nomfile, obj):
+    pretty_json = json.dumps(obj, sort_keys=True, indent=4)
+    with open('/tmp/manifest/' + nomfile, 'w') as f:
+        f.write(pretty_json)
 
 def compare_arrays(old_params, new_params, param_name, to_do = Actions.Update):
     old = old_params.get(param_name) or []
