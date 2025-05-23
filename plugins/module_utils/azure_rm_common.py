@@ -129,7 +129,7 @@ AZURE_API_PROFILES = {
         'PolicyClient': '2016-12-01',
         'ResourceManagementClient': '2018-05-01',
         'EventHubManagementClient': '2018-05-04',
-        'SubscriptionClient': '2016-06-01',
+        'SubscriptionClient': '2019-11-01',
         'DnsManagementClient': '2016-04-01',
         'KeyVaultManagementClient': '2016-10-01',
         'AuthorizationManagementClient': SDKProfile('2015-07-01', {
@@ -149,7 +149,7 @@ AZURE_API_PROFILES = {
         'ManagementLockClient': '2016-09-01',
         'PolicyClient': '2016-12-01',
         'ResourceManagementClient': '2018-02-01',
-        'SubscriptionClient': '2016-06-01',
+        'SubscriptionClient': '2019-11-01',
         'DnsManagementClient': '2016-04-01',
         'KeyVaultManagementClient': '2016-10-01',
         'AuthorizationManagementClient': SDKProfile('2015-07-01', {
@@ -167,7 +167,7 @@ AZURE_API_PROFILES = {
         'ManagementLockClient': '2015-01-01',
         'PolicyClient': '2015-10-01-preview',
         'ResourceManagementClient': '2016-02-01',
-        'SubscriptionClient': '2016-06-01',
+        'SubscriptionClient': '2019-11-01',
         'DnsManagementClient': '2016-04-01',
         'KeyVaultManagementClient': '2016-10-01',
         'AuthorizationManagementClient': SDKProfile('2015-07-01', {
@@ -922,7 +922,8 @@ class AzureRMModuleBase(object):
         self.log('Getting management service client {0}'.format(client_type.__name__))
         self.check_client_version(client_type)
 
-        client_argspec = inspect.getargspec(client_type.__init__)
+        #client_argspec = inspect.getargspec(client_type.__init__)
+        client_argspec = inspect.signature(client_type.__init__)
 
         if not base_url:
             # most things are resource_manager, don't make everyone specify
@@ -958,12 +959,12 @@ class AzureRMModuleBase(object):
 
         # unversioned clients won't accept profile; only send it if necessary
         # clients without a version specified in the profile will use the default
-        if api_profile_dict and 'profile' in client_argspec.args:
+        if api_profile_dict and 'profile' in client_argspec.parameters:
             client_kwargs['profile'] = api_profile_dict
 
         # If the client doesn't accept api_version, it's unversioned.
         # If it does, favor explicitly-specified api_version, fall back to api_profile
-        if 'api_version' in client_argspec.args:
+        if 'api_version' in client_argspec.parameters:
             profile_default_version = api_profile_dict.get('default_api_version', None)
             if api_version or profile_default_version:
                 client_kwargs['api_version'] = api_version or profile_default_version
@@ -1085,7 +1086,8 @@ class AzureRMModuleBase(object):
             self._subscription_client = self.get_mgmt_svc_client(SubscriptionClient,
                                                                  base_url=self._cloud_environment.endpoints.resource_manager,
                                                                  suppress_subscription_id=True,
-                                                                 api_version='2020-05-01')
+                                                                 api_version='2022-12-01',
+                                                                 is_track2=True)
         return self._subscription_client
 
     @property
@@ -1123,6 +1125,7 @@ class AzureRMModuleBase(object):
         if not self._resource_client:
             self._resource_client = self.get_mgmt_svc_client(ResourceManagementClient,
                                                              base_url=self._cloud_environment.endpoints.resource_manager,
+                                                             is_track2=True,
                                                              api_version='2017-05-10')
         return self._resource_client
 
@@ -1910,7 +1913,7 @@ class AzureRMModuleBaseEx(AzureRMModuleBase):
             return super(AzureRMModuleBaseEx, self).get_mgmt_svc_client(client_type, base_url, api_version, suppress_subscription_id)
         self.check_client_version(client_type)
 
-        client_argspec = inspect.getargspec(client_type.__init__)
+        client_argspec = inspect.signature(client_type.__init__)
 
         if not base_url:
             # most things are resource_manager, don't make everyone specify
@@ -1935,12 +1938,12 @@ class AzureRMModuleBaseEx(AzureRMModuleBase):
 
         # unversioned clients won't accept profile; only send it if necessary
         # clients without a version specified in the profile will use the default
-        if api_profile_dict and 'profile' in client_argspec.args:
+        if api_profile_dict and 'profile' in client_argspec.parameters:
             client_kwargs['profile'] = api_profile_dict
 
         # If the client doesn't accept api_version, it's unversioned.
         # If it does, favor explicitly-specified api_version, fall back to api_profile
-        if 'api_version' in client_argspec.args:
+        if 'api_version' in client_argspec.parameters:
             profile_default_version = api_profile_dict.get('default_api_version', None)
             if api_version or profile_default_version:
                 client_kwargs['api_version'] = api_version or profile_default_version

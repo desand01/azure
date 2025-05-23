@@ -562,7 +562,7 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                             del item['host']
                         if 'port' in item and item['port'] is None:
                             del item['port']
-                        if 'match' in item and 'body' in item['match'] and item['match']['body'] is None:
+                        if 'match' in item and item['match'] and 'body' in item['match'] and item['match']['body'] is None:
                             del item['match']['body']
                     self.parameters["probes"] = ev
                 elif key == "backend_http_settings_collection":
@@ -577,6 +577,8 @@ class AzureRMApplicationGateways(AzureRMModuleBase):
                             item['protocol'] = _snake_to_camel(item['protocol'], True)
                         if 'cookie_based_affinity' in item:
                             item['cookie_based_affinity'] = _snake_to_camel(item['cookie_based_affinity'], True)
+                        if 'host_name' in item and (item['host_name'] is None or item['host_name'] == ''):
+                            del item['host_name']
                         if 'probe' in item:
                             id = probe_id(self.subscription_id,
                                           kwargs['resource_group'],
